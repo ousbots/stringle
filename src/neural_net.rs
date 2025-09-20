@@ -112,7 +112,7 @@ fn forward_pass(input: &Tensor, target: &Tensor, weights: &Tensor) -> Tensor {
 // probabilities is computed and the first index with a summed probability greater than a randomly
 // chosen value is selected.
 fn random_sample(probs: &Tensor) -> usize {
-    let random_val: f32 = rand::thread_rng().gen_range(0.0..1.0);
+    let random_val: f32 = rand::rng().random_range(0.0..1.0);
 
     let cumulative_sum = probs
         .cumsum(1)
