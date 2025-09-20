@@ -4,11 +4,6 @@ use rand::Rng;
 use std::io;
 use std::io::Write;
 
-const LETTERS: &[char] = &[
-    '.', 'a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i', 'j', 'k', 'l', 'm', 'n', 'o', 'p', 'q', 'r',
-    's', 't', 'u', 'v', 'w', 'x', 'y', 'z',
-];
-
 // Run the neural network training and generation.
 pub fn run(data: &Vec<String>, device: &Device, options: &crate::options::Options) {
     let (input, target) = tokenize(data, device);
@@ -69,7 +64,7 @@ pub fn run(data: &Vec<String>, device: &Device, options: &crate::options::Option
 
             // Random sample from the probability.
             position = random_sample(&probs) as u8;
-            output.push(itol(position));
+            output.push(crate::data::itol(position));
 
             if position == 0 {
                 break;
@@ -116,20 +111,20 @@ fn tokenize(words: &Vec<String>, device: &Device) -> (Tensor, Tensor) {
         let chars: Vec<char> = word.chars().collect();
         while index < word.len() {
             if index == 0 {
-                input.push(ltoi(delimiter.clone()));
-                target.push(ltoi(chars[index]));
+                input.push(crate::data::ltoi(delimiter.clone()));
+                target.push(crate::data::ltoi(chars[index]));
                 index += 1;
                 continue;
             }
 
             if index == word.len() - 1 {
-                input.push(ltoi(chars[index]));
-                target.push(ltoi(delimiter.clone()));
+                input.push(crate::data::ltoi(chars[index]));
+                target.push(crate::data::ltoi(delimiter.clone()));
                 break;
             }
 
-            input.push(ltoi(chars[index]));
-            target.push(ltoi(chars[index + 1]));
+            input.push(crate::data::ltoi(chars[index]));
+            target.push(crate::data::ltoi(chars[index + 1]));
             index += 1;
         }
     }
@@ -169,16 +164,4 @@ fn random_sample(probs: &Tensor) -> usize {
     }
 
     return cumulative_sum.len() - 1;
-}
-
-// Convert a letter into an integer for data normalization.
-// . -> 0, a -> 1, b -> 2, ...
-// NOTE: Input should be lowercase a-z and everything else is compressed onto the letter 'z'.
-fn ltoi(letter: char) -> u8 {
-    return LETTERS.iter().position(|&c| c == letter).unwrap_or(26) as u8;
-}
-
-// Convert an integer to a letter.
-fn itol(index: u8) -> char {
-    return LETTERS.get(index as usize).unwrap_or(&'z').clone();
 }

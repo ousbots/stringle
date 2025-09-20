@@ -1,0 +1,35 @@
+/// The training data should be a list of strings separated by newlines. The data will be
+/// normalized to be lowercase ascii characters between a-z, any other input characters will b
+/// collapsed onto 'z'.
+use std::fs;
+
+// The normalized set of letters used for training. The '.' character is a special character used
+// to designate the start and end of words.
+const LETTERS: &[char] = &[
+    '.', 'a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i', 'j', 'k', 'l', 'm', 'n', 'o', 'p', 'q', 'r',
+    's', 't', 'u', 'v', 'w', 'x', 'y', 'z',
+];
+
+// Convert an normalized integer to a letter.
+pub fn itol(index: u8) -> char {
+    return LETTERS.get(index as usize).unwrap_or(&'z').clone();
+}
+
+// Convert a letter into an integer for data normalization.
+// NOTE: Input should be lowercase a-z and everything else is compressed onto the letter 'z'.
+pub fn ltoi(letter: char) -> u8 {
+    return LETTERS.iter().position(|&c| c == letter).unwrap_or(26) as u8;
+}
+
+// Read the data into a list of strings using newlines as a separator.
+pub fn parse_data(path: &String) -> Vec<String> {
+    let items: Vec<String> = fs::read_to_string(path)
+        .unwrap_or_else(|error| {
+            panic!("unable to open {path}: {error:?}");
+        })
+        .lines()
+        .map(|elem| String::from(elem).trim().to_lowercase())
+        .collect();
+
+    return items;
+}
