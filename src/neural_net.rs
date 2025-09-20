@@ -17,7 +17,8 @@ pub fn run(data: &Vec<String>, device: &Device, options: &crate::options::Option
         options.iterations, options.learn_rate
     );
 
-    // The training rounds.
+    // The training rounds. Run a forward pass, backpropagate, then adjust the weights based on the
+    // calculated loss.
     for count in 1..=options.iterations {
         loss = forward_pass(&input, &target, &weights);
 
@@ -76,6 +77,11 @@ pub fn run(data: &Vec<String>, device: &Device, options: &crate::options::Option
 }
 
 // A forward pass of the input over the weights and loss calculation.
+//
+// The forward pass is encoding the inputs as one-hots (sort of like an identity tensor that
+// corresponds to the input value in the weights) which are cross multiplied with the weights, which
+// are squared to ensure positive values, called log-counts. The loss value is then calculated as
+// logits^2 / sum(logits).
 fn forward_pass(input: &Tensor, target: &Tensor, weights: &Tensor) -> Tensor {
     // One-hot encoding of all inputs with a depth of 27 for the 26 letters + delimiter.
     let input_enc = encoding::one_hot(input.clone(), 27, 1f32, 0f32).unwrap();
@@ -100,9 +106,39 @@ fn forward_pass(input: &Tensor, target: &Tensor, weights: &Tensor) -> Tensor {
     return loss;
 }
 
+// Take a random sample from the given probability tensor.
+//
+// In order to take the probability distribution into account, a cumulative sum of the
+// probabilities is computed and the first index with a summed probability greater than a randomly
+// chosen value is selected.
+fn random_sample(probs: &Tensor) -> usize {
+    let random_val: f32 = rand::thread_rng().gen_range(0.0..1.0);
+
+    let cumulative_sum = probs
+        .cumsum(1)
+        .unwrap()
+        .squeeze(0)
+        .unwrap()
+        .to_vec1()
+        .unwrap();
+    for (index, &sum) in cumulative_sum.iter().enumerate() {
+        if random_val <= sum {
+            return index;
+        }
+    }
+
+    return cumulative_sum.len() - 1;
+}
+
 // Tokenize a list of strings for neural network training.
+//
+// Strings are tokenized characterwise, only the previous character is considered when generating
+// the next character. Each word in the input is surrounded by the delimiter character and then
+// split into two lists, each character of the word is paired with it's next, so that the input
+// tensor is every character of a word aligned with the target tensor of every next character. The
+// characters are normalized to integers for later numerical calculations.
 fn tokenize(words: &Vec<String>, device: &Device) -> (Tensor, Tensor) {
-    let delimiter: char = '.';
+    let delimiter: char = crate::data::LETTERS[0];
     let mut input: Vec<u8> = vec![];
     let mut target: Vec<u8> = vec![];
 
@@ -140,28 +176,4 @@ fn tokenize(words: &Vec<String>, device: &Device) -> (Tensor, Tensor) {
     });
 
     return (input_tensor, target_tensor);
-}
-
-// Take a random sample from the given probability tensor.
-//
-// In order to take the probability distribution into account, a cumulative sum of the
-// probabilities is computed and the first index with a summed probability greater than a randomly
-// chosen value is selected.
-fn random_sample(probs: &Tensor) -> usize {
-    let random_val: f32 = rand::thread_rng().gen_range(0.0..1.0);
-
-    let cumulative_sum = probs
-        .cumsum(1)
-        .unwrap()
-        .squeeze(0)
-        .unwrap()
-        .to_vec1()
-        .unwrap();
-    for (index, &sum) in cumulative_sum.iter().enumerate() {
-        if random_val <= sum {
-            return index;
-        }
-    }
-
-    return cumulative_sum.len() - 1;
 }

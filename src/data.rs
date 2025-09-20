@@ -5,7 +5,7 @@ use std::fs;
 
 // The normalized set of letters used for training. The '.' character is a special character used
 // to designate the start and end of words.
-const LETTERS: &[char] = &[
+pub const LETTERS: &[char] = &[
     '.', 'a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i', 'j', 'k', 'l', 'm', 'n', 'o', 'p', 'q', 'r',
     's', 't', 'u', 'v', 'w', 'x', 'y', 'z',
 ];
