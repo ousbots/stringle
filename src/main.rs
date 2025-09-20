@@ -19,7 +19,7 @@ fn parse_data(path: &String) -> Vec<String> {
             panic!("unable to open {path}: {error:?}");
         })
         .lines()
-        .map(String::from)
+        .map(|elem| String::from(elem).trim().to_lowercase())
         .collect();
 
     return items;
