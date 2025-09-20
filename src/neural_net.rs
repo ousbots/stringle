@@ -14,8 +14,8 @@ pub fn run(data: &Vec<String>, device: &Device, options: &crate::options::Option
     let mut weights = Var::rand(0f32, 1f32, (27, 27), device).unwrap();
 
     println!(
-        "running {} gradient descent training iterations",
-        options.iterations
+        "running {} gradient descent training iterations with a learn rate of {}",
+        options.iterations, options.learn_rate
     );
     for count in 0..options.iterations {
         let loss = forward_pass(&input, &target, &weights);
@@ -29,7 +29,7 @@ pub fn run(data: &Vec<String>, device: &Device, options: &crate::options::Option
             &weights
                 .broadcast_sub(
                     &weights_grad
-                        .broadcast_mul(&Tensor::new(&[50f32], device).unwrap())
+                        .broadcast_mul(&Tensor::new(&[options.learn_rate], device).unwrap())
                         .unwrap(),
                 )
                 .unwrap(),
