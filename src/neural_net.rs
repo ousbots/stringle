@@ -19,7 +19,7 @@ pub fn run(data: &Vec<String>, device: &Device, options: &crate::options::Option
 
     // The training rounds. Run a forward pass, backpropagate, then adjust the weights based on the
     // calculated loss.
-    for count in 1..=options.iterations {
+    for count in 0..options.iterations {
         loss = forward_pass(&input, &target, &weights);
 
         weights.backward().unwrap().remove(&weights);
@@ -37,8 +37,14 @@ pub fn run(data: &Vec<String>, device: &Device, options: &crate::options::Option
         )
         .unwrap();
 
+        if count % 100 == 0 {
+            print!(
+                "{:.1}%\t",
+                100. * (count as f64) / (options.iterations as f64)
+            );
+        }
         print!(".");
-        if count % 100 == 0 || count == options.iterations {
+        if count > 0 && (count % 100 == 99 || count == options.iterations - 1) {
             print!("\n");
         }
         io::stdout().flush().unwrap();
