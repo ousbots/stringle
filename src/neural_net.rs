@@ -7,7 +7,7 @@ const LETTERS: &[char] = &[
 ];
 
 // Run the neural network training.
-pub fn run(data: &Vec<String>, device: &Device, iterations: usize) {
+pub fn run(data: &Vec<String>, device: &Device, options: &crate::options::Options) {
     let (input, target) = tokenize(data, device);
 
     // Randomized starting weights.
@@ -15,9 +15,9 @@ pub fn run(data: &Vec<String>, device: &Device, iterations: usize) {
 
     println!(
         "running {} gradient descent training iterations",
-        iterations
+        options.iterations
     );
-    for count in 0..iterations {
+    for count in 0..options.iterations {
         let loss = forward_pass(&input, &target, &weights);
         println!("run {} loss {}", count + 1, loss);
 
