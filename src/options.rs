@@ -8,12 +8,14 @@ pub struct Options {
     pub device: String,
     pub iterations: usize,
     pub learn_rate: f32,
+    pub generate: usize,
 }
 
 const DEFAULT_DATA_PATH: &str = "data/names.txt";
 const DEFAULT_DEVICE: &str = "cpu";
 const DEFAULT_ITERATIONS: usize = 100;
 const DEFAULT_LEARN_RATE: f32 = 50.0;
+const DEFAULT_GENERATE: usize = 20;
 
 // Parse the command line options.
 pub fn parse_args() -> Options {
@@ -22,6 +24,7 @@ pub fn parse_args() -> Options {
         device: DEFAULT_DEVICE.to_string(),
         iterations: DEFAULT_ITERATIONS,
         learn_rate: DEFAULT_LEARN_RATE,
+        generate: DEFAULT_GENERATE,
     };
 
     let mut args: Vec<String> = env::args().collect();
@@ -66,6 +69,15 @@ pub fn parse_args() -> Options {
                     process::exit(-1);
                 }
             }
+            "--generate" => {
+                if let Some(count) = args.pop() {
+                    options.generate = str::parse::<usize>(count.as_str()).unwrap();
+                } else {
+                    println!("missing the number portion of the --generate flag");
+                    print_help();
+                    process::exit(-1);
+                }
+            }
             _ => {
                 print_help();
                 process::exit(-1);
@@ -80,11 +92,9 @@ pub fn parse_args() -> Options {
 fn print_help() {
     println!("usage:");
     println!("command");
-    println!("\t--data <data path> (default: {})", DEFAULT_DATA_PATH);
-    println!(
-        "\t--device <metal, cuda, cpu> (default: {})",
-        DEFAULT_DEVICE
-    );
-    println!("\t--iterations <num> (default: {})", DEFAULT_ITERATIONS);
-    println!("\t--learn-rate <rate> (default: {})", DEFAULT_LEARN_RATE);
+    println!("\t--data       <data path>      ({})", DEFAULT_DATA_PATH);
+    println!("\t--device     <metal|cuda|cpu> ({})", DEFAULT_DEVICE);
+    println!("\t--iterations <num>            ({})", DEFAULT_ITERATIONS);
+    println!("\t--learn-rate <rate>           ({})", DEFAULT_LEARN_RATE);
+    println!("\t--generate   <num>            ({})", DEFAULT_GENERATE);
 }

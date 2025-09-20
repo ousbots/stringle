@@ -1,25 +1,30 @@
 use candle_core::{Device, Tensor, Var};
 use candle_nn::encoding;
+use rand::Rng;
+use std::io;
+use std::io::Write;
 
 const LETTERS: &[char] = &[
     '.', 'a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i', 'j', 'k', 'l', 'm', 'n', 'o', 'p', 'q', 'r',
     's', 't', 'u', 'v', 'w', 'x', 'y', 'z',
 ];
 
-// Run the neural network training.
+// Run the neural network training and generation.
 pub fn run(data: &Vec<String>, device: &Device, options: &crate::options::Options) {
     let (input, target) = tokenize(data, device);
 
-    // Randomized starting weights.
+    // Randomized starting weights that will be updated every training round.
     let mut weights = Var::rand(0f32, 1f32, (27, 27), device).unwrap();
+    let mut loss = Tensor::new(&[100f32], device).unwrap();
 
     println!(
-        "running {} gradient descent training iterations with a learn rate of {}",
+        "running gradient descent training with {} iterations and a learn rate of {}\n",
         options.iterations, options.learn_rate
     );
-    for count in 0..options.iterations {
-        let loss = forward_pass(&input, &target, &weights);
-        println!("run {} loss {}", count + 1, loss);
+
+    // The training rounds.
+    for count in 1..=options.iterations {
+        loss = forward_pass(&input, &target, &weights);
 
         weights.backward().unwrap().remove(&weights);
         let loss_grad = loss.backward().unwrap();
@@ -35,6 +40,43 @@ pub fn run(data: &Vec<String>, device: &Device, options: &crate::options::Option
                 .unwrap(),
         )
         .unwrap();
+
+        print!(".");
+        if count % 100 == 0 || count == options.iterations {
+            print!("\n");
+        }
+        io::stdout().flush().unwrap();
+    }
+
+    println!("\n🤗🤗🤗🤗\n");
+    println!("post training loss {}\n", loss.to_vec0::<f32>().unwrap());
+
+    println!("Generating {} new strings:", options.generate);
+
+    // Sample from the trained weights to generate new similar strings.
+    for _ in 0..options.generate {
+        let mut position: u8 = 0;
+        let mut output: String = "".to_string();
+
+        loop {
+            let position_enc =
+                encoding::one_hot(Tensor::new(&[position], device).unwrap(), 27, 1f32, 0f32)
+                    .unwrap();
+            let logits = position_enc.matmul(&weights).unwrap();
+            let counts = logits.exp().unwrap();
+            let sum = counts.clone().sum_keepdim(1).unwrap();
+            let probs = counts.clone().broadcast_div(&sum.clone()).unwrap();
+
+            // Random sample from the probability.
+            position = random_sample(&probs) as u8;
+            output.push(itol(position));
+
+            if position == 0 {
+                break;
+            }
+        }
+
+        println!("{}", output);
     }
 }
 
@@ -105,9 +147,33 @@ fn tokenize(words: &Vec<String>, device: &Device) -> (Tensor, Tensor) {
     return (input_tensor, target_tensor);
 }
 
+// Take a random sample from the given probability tensor.
+//
+// In order to take the probability distribution into account, a cumulative sum of the
+// probabilities is computed and the first index with a summed probability greater than a randomly
+// chosen value is selected.
+fn random_sample(probs: &Tensor) -> usize {
+    let random_val: f32 = rand::thread_rng().gen_range(0.0..1.0);
+
+    let cumulative_sum = probs
+        .cumsum(1)
+        .unwrap()
+        .squeeze(0)
+        .unwrap()
+        .to_vec1()
+        .unwrap();
+    for (index, &sum) in cumulative_sum.iter().enumerate() {
+        if random_val <= sum {
+            return index;
+        }
+    }
+
+    return cumulative_sum.len() - 1;
+}
+
 // Convert a letter into an integer for data normalization.
 // . -> 0, a -> 1, b -> 2, ...
-// NOTE: Everything that's not a letter is compressed onto the letter 'z'.
+// NOTE: Input should be lowercase a-z and everything else is compressed onto the letter 'z'.
 fn ltoi(letter: char) -> u8 {
     return LETTERS.iter().position(|&c| c == letter).unwrap_or(26) as u8;
 }
