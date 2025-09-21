@@ -183,14 +183,10 @@ fn tokenize(words: &Vec<String>, device: &Device) -> (Tensor, Tensor) {
     }
 
     let input_len = input.len();
-    let input_tensor = Tensor::from_vec(input, input_len, device).unwrap_or_else(|error| {
-        panic!("unable to create tensor: {error:?}");
-    });
+    let input_tensor = Tensor::from_vec(input, input_len, device).unwrap();
 
     let target_len = target.len();
-    let target_tensor = Tensor::from_vec(target, target_len, device).unwrap_or_else(|error| {
-        panic!("unable to create tensor: {error:?}");
-    });
+    let target_tensor = Tensor::from_vec(target, target_len, device).unwrap();
 
     return (input_tensor, target_tensor);
 }
