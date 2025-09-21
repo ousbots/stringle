@@ -71,11 +71,10 @@ pub fn run(data: &Vec<String>, device: &Device, options: &crate::options::Option
 
             // Random sample from the probability.
             position = random_sample(&probs) as u8;
-            output.push(crate::data::itol(position));
-
             if position == 0 {
                 break;
             }
+            output.push(crate::data::itol(position));
         }
 
         println!("{}", output);
