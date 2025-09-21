@@ -98,7 +98,8 @@ fn forward_pass(input: &Tensor, target: &Tensor, weights: &Tensor) -> Tensor {
     let probs = counts.clone().broadcast_div(&sum.clone()).unwrap();
 
     // Calculate negative log-likelihood loss.
-    // Use a one-hot of the targets to select their probabilities, p, then calculate -log(p).mean().
+    // Use a one-hot of the targets to select their probabilities, p, then calculate the loss with
+    // a weight decay: -log(p).mean() + 0.01 * (w^2).mean().
     let target_onehot = encoding::one_hot(target.clone(), 27, 1f32, 0f32).unwrap();
     let selected_probs = probs.broadcast_mul(&target_onehot).unwrap().sum(1).unwrap();
     let loss = selected_probs
@@ -107,6 +108,16 @@ fn forward_pass(input: &Tensor, target: &Tensor, weights: &Tensor) -> Tensor {
         .neg()
         .unwrap()
         .mean_all()
+        .unwrap()
+        .add(
+            &weights
+                .powf(2.0)
+                .unwrap()
+                .mean_all()
+                .unwrap()
+                .affine(0.01, 0.0)
+                .unwrap(),
+        )
         .unwrap();
 
     return loss;
