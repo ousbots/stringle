@@ -6,6 +6,8 @@ use std::io::Write;
 
 // Run the neural network training and generation.
 pub fn run(data: &Vec<String>, device: &Device, options: &crate::options::Options) {
+    println!("🥸 basic neural network");
+
     let (input, target) = tokenize(data, device);
 
     // Randomized starting weights that will be updated every training round.
@@ -13,12 +15,13 @@ pub fn run(data: &Vec<String>, device: &Device, options: &crate::options::Option
     let mut loss = Tensor::new(&[100f32], device).unwrap();
 
     println!(
-        "running gradient descent training with {} iterations and a learn rate of {}\n",
+        "🤯 running gradient descent training with {} iterations and a learning rate of {}\n",
         options.iterations, options.learn_rate
     );
 
-    // The training rounds. Run a forward pass, backpropagate, then adjust the weights based on the
-    // calculated loss.
+    // The training rounds.
+    //
+    // Rounds are forward pass, backpropagate, then adjust the weights based on the calculated loss.
     for count in 0..options.iterations {
         loss = forward_pass(&input, &target, &weights);
 
@@ -51,11 +54,16 @@ pub fn run(data: &Vec<String>, device: &Device, options: &crate::options::Option
     }
 
     println!("\n🤗🤗🤗🤗\n");
-    println!("post training loss {}\n", loss.to_vec0::<f32>().unwrap());
+    println!("🤔 post training loss {}", loss.to_vec0::<f32>().unwrap());
+    println!("🫣 generating {} new strings:", options.generate);
 
-    println!("Generating {} new strings:", options.generate);
-
-    // Sample from the trained weights to generate new similar strings.
+    // Generate new words from the trained weights.
+    //
+    // Sample from the trained weights to generate new similar strings. Sampling is running a loop
+    // that: encodes the input position to a one-hot, use it to mask the trained weights, calculate
+    // probabilities from the extracted weights, then sample the calculated probabilities. The
+    // result is used as the input on the next round until a position of 0 (the delimiter) is
+    // reached, which is the end of the word.
     for _ in 0..options.generate {
         let mut position: u8 = 0;
         let mut output: String = "".to_string();
@@ -77,16 +85,18 @@ pub fn run(data: &Vec<String>, device: &Device, options: &crate::options::Option
             output.push(crate::data::itol(position));
         }
 
-        println!("{}", output);
+        println!("\t{}", output);
     }
 }
 
 // A forward pass of the input over the weights and loss calculation.
 //
-// The forward pass is encoding the inputs as one-hots (sort of like an identity tensor that
-// corresponds to the input value in the weights) which are cross multiplied with the weights, which
-// are squared to ensure positive values, called log-counts. The loss value is then calculated as
-// logits^2 / sum(logits).
+// The forward pass involves encoding the inputs as a one-hot vector, which is like a mask or
+// identity tensor of the input over the input space. The one-hot is cross multiplied with the
+// weights, extracting the weight values that correspond to the input. These weights are then
+// squared to ensure they're positive. These squared weight values are commonly called log-counts,
+// or logits. Finally, the loss value is calculated with a weights decay as:
+// (logits^2 / sum(logits)) - 0.1 * (w^2).mean().
 fn forward_pass(input: &Tensor, target: &Tensor, weights: &Tensor) -> Tensor {
     // One-hot encoding of all inputs with a depth of 27 for the 26 letters + delimiter.
     let input_enc = encoding::one_hot(input.clone(), 27, 1f32, 0f32).unwrap();
