@@ -39,7 +39,7 @@ pub fn run(data: &Vec<String>, device: &Device, options: &crate::options::Option
 
         if count % 100 == 0 {
             print!(
-                "{:.1}%\t",
+                "{:.0}%\t",
                 100. * (count as f64) / (options.iterations as f64)
             );
         }
