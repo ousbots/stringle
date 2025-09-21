@@ -12,13 +12,16 @@ pub const LETTERS: &[char] = &[
 
 // Convert an normalized integer to a letter.
 pub fn itol(index: u8) -> char {
-    return LETTERS.get(index as usize).unwrap_or(&'z').clone();
+    return LETTERS.get(usize::from(index)).unwrap_or(&'z').clone();
 }
 
 // Convert a letter into an integer for data normalization.
 // NOTE: Input should be lowercase a-z and everything else is compressed onto the letter 'z'.
 pub fn ltoi(letter: char) -> u8 {
-    return LETTERS.iter().position(|&c| c == letter).unwrap_or(26) as u8;
+    return LETTERS
+        .iter()
+        .position(|&c| c == letter)
+        .unwrap_or(LETTERS.len() - 1) as u8;
 }
 
 // Read the data into a list of strings using newlines as a separator.
