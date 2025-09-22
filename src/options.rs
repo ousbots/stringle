@@ -6,14 +6,20 @@ use std::process;
 pub struct Options {
     pub data: String,
     pub device: String,
+    pub method: String,
     pub iterations: usize,
+    pub batch_size: usize,
+    pub block_size: usize,
     pub learn_rate: f32,
     pub generate: usize,
 }
 
-const DEFAULT_DATA_PATH: &str = "data/names.txt";
+const DEFAULT_DATA_PATH: &str = "data/names_short.txt";
 const DEFAULT_DEVICE: &str = "cpu";
+const DEFAULT_METHOD: &str = "mlp";
 const DEFAULT_ITERATIONS: usize = 100;
+const DEFAULT_BATCH_SIZE: usize = 64;
+const DEFAULT_BLOCK_SIZE: usize = 3;
 const DEFAULT_LEARN_RATE: f32 = 50.0;
 const DEFAULT_GENERATE: usize = 20;
 
@@ -22,7 +28,10 @@ pub fn parse_args() -> Options {
     let mut options = Options {
         data: DEFAULT_DATA_PATH.to_string(),
         device: DEFAULT_DEVICE.to_string(),
+        method: DEFAULT_METHOD.to_string(),
         iterations: DEFAULT_ITERATIONS,
+        batch_size: DEFAULT_BATCH_SIZE,
+        block_size: DEFAULT_BLOCK_SIZE,
         learn_rate: DEFAULT_LEARN_RATE,
         generate: DEFAULT_GENERATE,
     };
@@ -51,11 +60,38 @@ pub fn parse_args() -> Options {
                     process::exit(-1);
                 }
             }
+            "--method" => {
+                if let Some(method) = args.pop() {
+                    options.method = method;
+                } else {
+                    println!("missing the method portion of the --method flag");
+                    print_help();
+                    process::exit(-1);
+                }
+            }
             "--iterations" => {
                 if let Some(iterations) = args.pop() {
                     options.iterations = str::parse::<usize>(iterations.as_str()).unwrap();
                 } else {
                     println!("missing the number portion of the --iterations flag");
+                    print_help();
+                    process::exit(-1);
+                }
+            }
+            "--batch-size" => {
+                if let Some(size) = args.pop() {
+                    options.batch_size = str::parse::<usize>(size.as_str()).unwrap();
+                } else {
+                    println!("missing the size portion of the --batch-size flag");
+                    print_help();
+                    process::exit(-1);
+                }
+            }
+            "--block-size" => {
+                if let Some(size) = args.pop() {
+                    options.block_size = str::parse::<usize>(size.as_str()).unwrap();
+                } else {
+                    println!("missing the size portion of the --block-size flag");
                     print_help();
                     process::exit(-1);
                 }
@@ -94,7 +130,10 @@ fn print_help() {
     println!("command");
     println!("\t--data       <data path>      ({})", DEFAULT_DATA_PATH);
     println!("\t--device     <metal|cuda|cpu> ({})", DEFAULT_DEVICE);
+    println!("\t--method     <nn|mlp>         ({})", DEFAULT_METHOD);
     println!("\t--iterations <num>            ({})", DEFAULT_ITERATIONS);
+    println!("\t--batch-size <num>            ({})", DEFAULT_BATCH_SIZE);
+    println!("\t--block-size <num>            ({})", DEFAULT_BLOCK_SIZE);
     println!("\t--learn-rate <rate>           ({})", DEFAULT_LEARN_RATE);
     println!("\t--generate   <num>            ({})", DEFAULT_GENERATE);
 }
