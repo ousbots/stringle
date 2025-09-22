@@ -55,7 +55,7 @@ pub fn run(data: &Vec<String>, device: &Device, options: &crate::options::Option
 
     println!("\n🤗🤗🤗🤗\n");
     println!("🤔 post training loss {}", loss.to_vec0::<f32>().unwrap());
-    println!("🫣 generating {} new strings:", options.generate);
+    println!("🫣 generating {} new strings:\n", options.generate);
 
     // Generate new words from the trained weights.
     //
@@ -74,8 +74,9 @@ pub fn run(data: &Vec<String>, device: &Device, options: &crate::options::Option
                     .unwrap();
             let logits = position_enc.matmul(&weights).unwrap();
             let counts = logits.exp().unwrap();
-            let sum = counts.clone().sum_keepdim(1).unwrap();
-            let probs = counts.clone().broadcast_div(&sum.clone()).unwrap();
+            let probs = counts
+                .broadcast_div(&counts.sum_keepdim(1).unwrap())
+                .unwrap();
 
             // Random sample from the probability.
             position = random_sample(&probs) as u8;
@@ -85,7 +86,7 @@ pub fn run(data: &Vec<String>, device: &Device, options: &crate::options::Option
             output.push(crate::data::itol(position));
         }
 
-        println!("\t{}", output);
+        println!("    {}", output);
     }
 }
 
@@ -103,8 +104,9 @@ fn forward_pass(input: &Tensor, target: &Tensor, weights: &Tensor) -> Tensor {
 
     let logits = input_enc.matmul(&weights).unwrap();
     let counts = logits.exp().unwrap();
-    let sum = counts.clone().sum_keepdim(1).unwrap();
-    let probs = counts.clone().broadcast_div(&sum.clone()).unwrap();
+    let probs = counts
+        .broadcast_div(&counts.sum_keepdim(1).unwrap())
+        .unwrap();
 
     // Calculate negative log-likelihood loss.
     // Use a one-hot of the targets to select their probabilities, p, then calculate the loss with
