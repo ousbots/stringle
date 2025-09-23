@@ -27,7 +27,7 @@ pub fn run(mut data: Vec<String>, device: Device, options: crate::options::Optio
     let (input, target) = tokenize(&data[..training_end].to_vec(), &device, &options);
     let (input_dev, target_dev) =
         tokenize(&data[training_end..dev_end].to_vec(), &device, &options);
-    let (intput_test, target_test) = tokenize(&data[dev_end..].to_vec(), &device, &options);
+    let (_intput_test, _target_test) = tokenize(&data[dev_end..].to_vec(), &device, &options);
 
     // Model parameters.
     let c = Var::rand(0f32, 1f32, (VOCAB_SIZE, options.embedding_size), &device).unwrap();
@@ -48,8 +48,17 @@ pub fn run(mut data: Vec<String>, device: Device, options: crate::options::Optio
     let mut parameters = vec![c, weights_1, biases_1, weights_2, biases_2];
 
     println!(
-        "🤯 running gradient descent training on {} parameters with {} iterations and a learning rate of {}\n",
-        parameters.iter().map(|elem| elem.elem_count()).sum::<usize>(), options.iterations, options.learn_rate
+        "🤯 running training with {} parameters, {} iterations, and hyperparameters:\n\tembedding layers {}, hidden layer neurons {}, training batch size {}, tokenization block size {}, learning rate {}\n",
+        parameters
+            .iter()
+            .map(|elem| elem.elem_count())
+            .sum::<usize>(),
+        options.iterations,
+        options.embedding_size,
+        options.hidden_size,
+        options.batch_size,
+        options.block_size,
+        options.learn_rate,
     );
 
     // Training rounds.
@@ -206,6 +215,7 @@ fn backward_pass(
 ) {
     let loss_grad = loss.backward().unwrap();
 
+    // Zero the gradients on each parameter, then adjust the parameter by learning rate * loss gradient.
     for index in 0..parameters.len() {
         let param = parameters[index].as_tensor();
         param.backward().unwrap().remove(param).unwrap();
