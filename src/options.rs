@@ -10,6 +10,8 @@ pub struct Options {
     pub iterations: usize,
     pub batch_size: usize,
     pub block_size: usize,
+    pub embedding_size: usize,
+    pub hidden_size: usize,
     pub learn_rate: f32,
     pub generate: usize,
 }
@@ -17,10 +19,12 @@ pub struct Options {
 const DEFAULT_DATA_PATH: &str = "data/names_short.txt";
 const DEFAULT_DEVICE: &str = "cpu";
 const DEFAULT_METHOD: &str = "mlp";
-const DEFAULT_ITERATIONS: usize = 100;
-const DEFAULT_BATCH_SIZE: usize = 64;
+const DEFAULT_ITERATIONS: usize = 1000;
+const DEFAULT_BATCH_SIZE: usize = 512;
 const DEFAULT_BLOCK_SIZE: usize = 3;
-const DEFAULT_LEARN_RATE: f32 = 50.0;
+const DEFAULT_EMBEDDING_SIZE: usize = 5;
+const DEFAULT_HIDDEN_SIZE: usize = 1000;
+const DEFAULT_LEARN_RATE: f32 = 0.1;
 const DEFAULT_GENERATE: usize = 20;
 
 // Parse the command line options.
@@ -32,6 +36,8 @@ pub fn parse_args() -> Options {
         iterations: DEFAULT_ITERATIONS,
         batch_size: DEFAULT_BATCH_SIZE,
         block_size: DEFAULT_BLOCK_SIZE,
+        embedding_size: DEFAULT_EMBEDDING_SIZE,
+        hidden_size: DEFAULT_HIDDEN_SIZE,
         learn_rate: DEFAULT_LEARN_RATE,
         generate: DEFAULT_GENERATE,
     };
@@ -96,6 +102,24 @@ pub fn parse_args() -> Options {
                     process::exit(-1);
                 }
             }
+            "--embedding-size" => {
+                if let Some(size) = args.pop() {
+                    options.embedding_size = str::parse::<usize>(size.as_str()).unwrap();
+                } else {
+                    println!("missing the size portion of the --embedding-size flag");
+                    print_help();
+                    process::exit(-1);
+                }
+            }
+            "--hidden-size" => {
+                if let Some(size) = args.pop() {
+                    options.hidden_size = str::parse::<usize>(size.as_str()).unwrap();
+                } else {
+                    println!("missing the size portion of the --hidden-size flag");
+                    print_help();
+                    process::exit(-1);
+                }
+            }
             "--learn-rate" => {
                 if let Some(rate) = args.pop() {
                     options.learn_rate = str::parse::<f32>(rate.as_str()).unwrap();
@@ -128,12 +152,35 @@ pub fn parse_args() -> Options {
 fn print_help() {
     println!("usage:");
     println!("command");
-    println!("\t--data       <data path>      ({})", DEFAULT_DATA_PATH);
-    println!("\t--device     <metal|cuda|cpu> ({})", DEFAULT_DEVICE);
-    println!("\t--method     <nn|mlp>         ({})", DEFAULT_METHOD);
-    println!("\t--iterations <num>            ({})", DEFAULT_ITERATIONS);
-    println!("\t--batch-size <num>            ({})", DEFAULT_BATCH_SIZE);
-    println!("\t--block-size <num>            ({})", DEFAULT_BLOCK_SIZE);
-    println!("\t--learn-rate <rate>           ({})", DEFAULT_LEARN_RATE);
-    println!("\t--generate   <num>            ({})", DEFAULT_GENERATE);
+    println!(
+        "\t--data           <data path>      ({})",
+        DEFAULT_DATA_PATH
+    );
+    println!("\t--device         <metal|cuda|cpu> ({})", DEFAULT_DEVICE);
+    println!("\t--method         <nn|mlp>         ({})", DEFAULT_METHOD);
+    println!(
+        "\t--iterations     <num>            ({})",
+        DEFAULT_ITERATIONS
+    );
+    println!(
+        "\t--batch-size     <num>            ({})",
+        DEFAULT_BATCH_SIZE
+    );
+    println!(
+        "\t--block-size     <num>            ({})",
+        DEFAULT_BLOCK_SIZE
+    );
+    println!(
+        "\t--embedding-size <num>            ({})",
+        DEFAULT_EMBEDDING_SIZE
+    );
+    println!(
+        "\t--hidden-size    <num>            ({})",
+        DEFAULT_HIDDEN_SIZE
+    );
+    println!(
+        "\t--learn-rate     <rate>           ({})",
+        DEFAULT_LEARN_RATE
+    );
+    println!("\t--generate       <num>            ({})", DEFAULT_GENERATE);
 }

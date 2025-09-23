@@ -10,8 +10,8 @@ fn main() {
     let data = data::parse_data(&options.data);
 
     match options.method.as_str() {
-        "nn" => neural_net::run(&data, &device, &options),
-        "mlp" => mlp::run(&data, &device, &options),
+        "nn" => neural_net::run(data, device, options),
+        "mlp" => mlp::run(data, device, options),
         _ => panic!("invalid option: {}", options.method),
     }
 }

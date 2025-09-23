@@ -1,21 +1,49 @@
 use candle_core::{Device, Tensor, Var};
 use candle_nn::loss;
 use candle_nn::ops;
+use rand::seq::SliceRandom;
 use rand::Rng;
 use std::io;
 use std::io::Write;
 
-pub fn run(data: &Vec<String>, device: &Device, options: &crate::options::Options) {
+// The vocabulary is hardcoded to the 26 letters plus the special delimiter character.
+const VOCAB_SIZE: usize = 27;
+
+pub fn run(mut data: Vec<String>, device: Device, options: crate::options::Options) {
     println!("😎 multilayer perceptron network");
 
-    let (input, target) = tokenize(data, device, options);
+    // Randomize the input data, then break it into different data sets.
+    //
+    // The three different data sets will be the training set, the dev (validation) set, and the
+    // test set. The training set is used for model training, the dev set is a set of valid words
+    // the model hasn't been trained on that we can validate against. And finally, the test set is
+    // another set of words the model wasn't trained on that can be used sparingly to test the
+    // model without influencing training.
+    data.shuffle(&mut rand::rng());
+
+    let training_end = (data.len() as f64 * 0.8).round() as usize;
+    let dev_end = (data.len() as f64 * 0.9).round() as usize;
+
+    let (input, target) = tokenize(&data[..training_end].to_vec(), &device, &options);
+    let (input_dev, target_dev) =
+        tokenize(&data[training_end..dev_end].to_vec(), &device, &options);
+    let (intput_test, target_test) = tokenize(&data[dev_end..].to_vec(), &device, &options);
 
     // Model parameters.
-    let c = Var::rand(0f32, 1f32, (27, 2), device).unwrap();
-    let weights_1 = Var::rand(0f32, 1f32, (6, 100), device).unwrap();
-    let biases_1 = Var::rand(0f32, 1f32, 100, device).unwrap();
-    let weights_2 = Var::rand(0f32, 1f32, (100, 27), device).unwrap();
-    let biases_2 = Var::rand(0f32, 1f32, 27, device).unwrap();
+    let c = Var::rand(0f32, 1f32, (VOCAB_SIZE, options.embedding_size), &device).unwrap();
+    let weights_1 = Var::rand(
+        0f32,
+        1f32,
+        (
+            options.embedding_size * options.block_size,
+            options.hidden_size,
+        ),
+        &device,
+    )
+    .unwrap();
+    let biases_1 = Var::rand(0f32, 1f32, options.hidden_size, &device).unwrap();
+    let weights_2 = Var::rand(0f32, 1f32, (options.hidden_size, VOCAB_SIZE), &device).unwrap();
+    let biases_2 = Var::rand(0f32, 1f32, VOCAB_SIZE, &device).unwrap();
 
     let mut parameters = vec![c, weights_1, biases_1, weights_2, biases_2];
 
@@ -32,7 +60,7 @@ pub fn run(data: &Vec<String>, device: &Device, options: &crate::options::Option
     // more rounds, running more rounds shows better results.
     for count in 0..options.iterations {
         let batch_indices =
-            Tensor::rand(0f32, input.dims()[0] as f32, (options.batch_size,), device)
+            Tensor::rand(0f32, input.dims()[0] as f32, (options.batch_size,), &device)
                 .unwrap()
                 .to_dtype(candle_core::DType::U32)
                 .unwrap();
@@ -46,9 +74,10 @@ pub fn run(data: &Vec<String>, device: &Device, options: &crate::options::Option
                 .index_select(&batch_indices.flatten_all().unwrap(), 0)
                 .unwrap(),
             &parameters,
+            &options,
         );
 
-        backward_pass(&loss, &mut parameters, options, device);
+        backward_pass(&loss, &mut parameters, &device, &options);
 
         // Print iteration updates.
         if count % 100 == 0 {
@@ -64,11 +93,16 @@ pub fn run(data: &Vec<String>, device: &Device, options: &crate::options::Option
         io::stdout().flush().unwrap();
     }
 
-    let validation_loss = forward_pass(&input, &target, &parameters);
+    let training_loss = forward_pass(&input, &target, &parameters, &options);
+    let validation_loss = forward_pass(&input_dev, &target_dev, &parameters, &options);
 
     println!("\n🤗🤗🤗🤗\n");
     println!(
-        "🤔 post training loss {}",
+        "🤔 training loss {}",
+        training_loss.to_vec0::<f32>().unwrap()
+    );
+    println!(
+        "🤔 validation loss {}",
         validation_loss.to_vec0::<f32>().unwrap()
     );
     println!("🫣 generating {} new strings:\n", options.generate);
@@ -86,7 +120,7 @@ pub fn run(data: &Vec<String>, device: &Device, options: &crate::options::Option
         loop {
             let embeddings = c
                 .index_select(
-                    &Tensor::new(context.clone(), device)
+                    &Tensor::new(context.clone(), &device)
                         .unwrap()
                         .flatten_all()
                         .unwrap(),
@@ -95,7 +129,7 @@ pub fn run(data: &Vec<String>, device: &Device, options: &crate::options::Option
                 .unwrap();
 
             let h = embeddings
-                .reshape(((), 6))
+                .reshape(((), weights_1.dims()[0]))
                 .unwrap()
                 .matmul(&weights_1)
                 .unwrap()
@@ -126,21 +160,24 @@ pub fn run(data: &Vec<String>, device: &Device, options: &crate::options::Option
     }
 }
 
-fn forward_pass(input: &Tensor, target: &Tensor, parameters: &Vec<Var>) -> Tensor {
+fn forward_pass(
+    input: &Tensor,
+    target: &Tensor,
+    parameters: &Vec<Var>,
+    _options: &crate::options::Options,
+) -> Tensor {
     let c = parameters[0].as_tensor();
     let weights_1 = parameters[1].as_tensor();
     let biases_1 = parameters[2].as_tensor();
     let weights_2 = parameters[3].as_tensor();
     let biases_2 = parameters[4].as_tensor();
 
-    let embeddings = c
-        .index_select(&input.flatten_all().unwrap(), 0)
-        .unwrap()
-        .reshape((input.dims()[0], input.dims()[1], c.dims()[1]))
-        .unwrap();
+    // Embed the input into vectors.
+    let embeddings = c.index_select(&input.flatten_all().unwrap(), 0).unwrap();
 
+    // Hidden layer pre-activation with weights and biases and activation with tanh.
     let h = embeddings
-        .reshape(((), 6))
+        .reshape(((), weights_1.dims()[0]))
         .unwrap()
         .matmul(&weights_1)
         .unwrap()
@@ -149,13 +186,14 @@ fn forward_pass(input: &Tensor, target: &Tensor, parameters: &Vec<Var>) -> Tenso
         .tanh()
         .unwrap();
 
+    // Output layer.
     let logits = h
         .matmul(&weights_2)
         .unwrap()
         .broadcast_add(&biases_2)
         .unwrap();
 
-    // More efficient to use loss::cross_entropy then rolling our own as before.
+    // Loss function.
     return loss::cross_entropy(&logits, &target.to_dtype(candle_core::DType::I64).unwrap())
         .unwrap();
 }
@@ -163,8 +201,8 @@ fn forward_pass(input: &Tensor, target: &Tensor, parameters: &Vec<Var>) -> Tenso
 fn backward_pass(
     loss: &Tensor,
     parameters: &mut Vec<Var>,
-    options: &crate::options::Options,
     device: &Device,
+    options: &crate::options::Options,
 ) {
     let loss_grad = loss.backward().unwrap();
 

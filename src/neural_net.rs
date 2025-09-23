@@ -5,14 +5,14 @@ use std::io;
 use std::io::Write;
 
 // Run the neural network training and generation.
-pub fn run(data: &Vec<String>, device: &Device, options: &crate::options::Options) {
+pub fn run(data: Vec<String>, device: Device, options: crate::options::Options) {
     println!("🥸 basic neural network");
 
-    let (input, target) = tokenize(data, device);
+    let (input, target) = tokenize(data, &device);
 
     // Randomized starting weights that will be updated every training round.
-    let mut weights = Var::rand(0f32, 1f32, (27, 27), device).unwrap();
-    let mut loss = Tensor::new(&[100f32], device).unwrap();
+    let mut weights = Var::rand(0f32, 1f32, (27, 27), &device).unwrap();
+    let mut loss = Tensor::new(&[100f32], &device).unwrap();
 
     println!(
         "🤯 running gradient descent training with {} iterations and a learning rate of {}\n",
@@ -33,7 +33,7 @@ pub fn run(data: &Vec<String>, device: &Device, options: &crate::options::Option
             &weights
                 .broadcast_sub(
                     &weights_grad
-                        .broadcast_mul(&Tensor::new(&[options.learn_rate], device).unwrap())
+                        .broadcast_mul(&Tensor::new(&[options.learn_rate], &device).unwrap())
                         .unwrap(),
                 )
                 .unwrap(),
@@ -70,7 +70,7 @@ pub fn run(data: &Vec<String>, device: &Device, options: &crate::options::Option
 
         loop {
             let position_enc =
-                encoding::one_hot(Tensor::new(&[position], device).unwrap(), 27, 1f32, 0f32)
+                encoding::one_hot(Tensor::new(&[position], &device).unwrap(), 27, 1f32, 0f32)
                     .unwrap();
             let logits = position_enc.matmul(&weights).unwrap();
             let counts = logits.exp().unwrap();
@@ -165,7 +165,7 @@ fn random_sample(probs: &Tensor) -> usize {
 // split into two lists, each character of the word is paired with it's next, so that the input
 // tensor is every character of a word aligned with the target tensor of every next character. The
 // characters are normalized to integers for later numerical calculations.
-fn tokenize(words: &Vec<String>, device: &Device) -> (Tensor, Tensor) {
+fn tokenize(words: Vec<String>, device: &Device) -> (Tensor, Tensor) {
     let delimiter: char = crate::data::LETTERS[0];
     let mut input: Vec<u8> = vec![];
     let mut target: Vec<u8> = vec![];
