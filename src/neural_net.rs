@@ -5,14 +5,14 @@ use std::io;
 use std::io::Write;
 
 // Run the neural network training and generation.
-pub fn run(data: Vec<String>, device: Device, options: crate::options::Options) {
+pub fn run(data: Vec<String>, device: Device, options: crate::options::Options) -> Result<(), candle_core::Error> {
     println!("🥸 basic neural network");
 
-    let (input, target) = tokenize(data, &device);
+    let (input, target) = tokenize(data, &device)?;
 
     // Randomized starting weights that will be updated every training round.
-    let mut weights = Var::rand(0f32, 1f32, (27, 27), &device).unwrap();
-    let mut loss = Tensor::new(&[100f32], &device).unwrap();
+    let mut weights = Var::rand(0f32, 1f32, (27, 27), &device)?;
+    let mut loss = Tensor::new(&[100f32], &device)?;
 
     println!(
         "🤯 running gradient descent training with {} iterations and a learning rate of {}\n",
@@ -23,38 +23,30 @@ pub fn run(data: Vec<String>, device: Device, options: crate::options::Options) 
     //
     // Rounds are forward pass, backpropagate, then adjust the weights based on the calculated loss.
     for count in 0..options.iterations {
-        loss = forward_pass(&input, &target, &weights);
+        loss = forward_pass(&input, &target, &weights)?;
 
-        weights.backward().unwrap().remove(&weights);
-        let loss_grad = loss.backward().unwrap();
-        let weights_grad = loss_grad.get(&weights).unwrap();
+        weights.backward()?.remove(&weights);
+        let loss_grad = loss.backward()?;
+        let weights_grad = loss_grad
+            .get(&weights)
+            .ok_or(candle_core::Error::Msg("missing loss gradient".to_string()))?;
 
         weights = Var::from_tensor(
-            &weights
-                .broadcast_sub(
-                    &weights_grad
-                        .broadcast_mul(&Tensor::new(&[options.learn_rate], &device).unwrap())
-                        .unwrap(),
-                )
-                .unwrap(),
-        )
-        .unwrap();
+            &weights.broadcast_sub(&weights_grad.broadcast_mul(&Tensor::new(&[options.learn_rate], &device)?)?)?,
+        )?;
 
         if count % 100 == 0 {
-            print!(
-                "{:.0}%\t",
-                100. * (count as f64) / (options.iterations as f64)
-            );
+            print!("{:.0}%\t", 100. * (count as f64) / (options.iterations as f64));
         }
         print!(".");
         if count > 0 && (count % 100 == 99 || count == options.iterations - 1) {
             print!("\n");
         }
-        io::stdout().flush().unwrap();
+        io::stdout().flush()?;
     }
 
     println!("\n🤗🤗🤗🤗\n");
-    println!("🤔 post training loss {}", loss.to_vec0::<f32>().unwrap());
+    println!("🤔 post training loss {}", loss.to_vec0::<f32>()?);
     println!("🫣 generating {} new strings:\n", options.generate);
 
     // Generate new words from the trained weights.
@@ -69,17 +61,13 @@ pub fn run(data: Vec<String>, device: Device, options: crate::options::Options) 
         let mut output: String = "".to_string();
 
         loop {
-            let position_enc =
-                encoding::one_hot(Tensor::new(&[position], &device).unwrap(), 27, 1f32, 0f32)
-                    .unwrap();
-            let logits = position_enc.matmul(&weights).unwrap();
-            let counts = logits.exp().unwrap();
-            let probs = counts
-                .broadcast_div(&counts.sum_keepdim(1).unwrap())
-                .unwrap();
+            let position_enc = encoding::one_hot(Tensor::new(&[position], &device)?, 27, 1f32, 0f32)?;
+            let logits = position_enc.matmul(&weights)?;
+            let counts = logits.exp()?;
+            let probs = counts.broadcast_div(&counts.sum_keepdim(1)?)?;
 
             // Random sample from the probability.
-            position = random_sample(&probs) as u8;
+            position = random_sample(&probs)?;
             if position == 0 {
                 break;
             }
@@ -88,6 +76,8 @@ pub fn run(data: Vec<String>, device: Device, options: crate::options::Options) 
 
         println!("    {}", output);
     }
+
+    Ok(())
 }
 
 // A forward pass of the input over the weights and loss calculation.
@@ -98,40 +88,26 @@ pub fn run(data: Vec<String>, device: Device, options: crate::options::Options) 
 // squared to ensure they're positive. These squared weight values are commonly called log-counts,
 // or logits. Finally, the loss value is calculated with a weights decay as:
 // (logits^2 / sum(logits)) - 0.1 * (w^2).mean().
-fn forward_pass(input: &Tensor, target: &Tensor, weights: &Tensor) -> Tensor {
+fn forward_pass(input: &Tensor, target: &Tensor, weights: &Tensor) -> Result<Tensor, candle_core::Error> {
     // One-hot encoding of all inputs with a depth of 27 for the 26 letters + delimiter.
-    let input_enc = encoding::one_hot(input.clone(), 27, 1f32, 0f32).unwrap();
+    let input_enc = encoding::one_hot(input.clone(), 27, 1f32, 0f32)?;
 
-    let logits = input_enc.matmul(&weights).unwrap();
-    let counts = logits.exp().unwrap();
-    let probs = counts
-        .broadcast_div(&counts.sum_keepdim(1).unwrap())
-        .unwrap();
+    let logits = input_enc.matmul(&weights)?;
+    let counts = logits.exp()?;
+    let probs = counts.broadcast_div(&counts.sum_keepdim(1)?)?;
 
     // Calculate negative log-likelihood loss.
     // Use a one-hot of the targets to select their probabilities, p, then calculate the loss with
     // a weight decay: -log(p).mean() + 0.01 * (w^2).mean().
-    let target_onehot = encoding::one_hot(target.clone(), 27, 1f32, 0f32).unwrap();
-    let selected_probs = probs.broadcast_mul(&target_onehot).unwrap().sum(1).unwrap();
+    let target_onehot = encoding::one_hot(target.clone(), 27, 1f32, 0f32)?;
+    let selected_probs = probs.broadcast_mul(&target_onehot)?.sum(1)?;
     let loss = selected_probs
-        .log()
-        .unwrap()
-        .neg()
-        .unwrap()
-        .mean_all()
-        .unwrap()
-        .add(
-            &weights
-                .powf(2.0)
-                .unwrap()
-                .mean_all()
-                .unwrap()
-                .affine(0.01, 0.0)
-                .unwrap(),
-        )
-        .unwrap();
+        .log()?
+        .neg()?
+        .mean_all()?
+        .add(&weights.powf(2.0)?.mean_all()?.affine(0.01, 0.0)?)?;
 
-    return loss;
+    Ok(loss)
 }
 
 // Take a random sample from the given probability tensor.
@@ -139,23 +115,17 @@ fn forward_pass(input: &Tensor, target: &Tensor, weights: &Tensor) -> Tensor {
 // In order to take the probability distribution into account, a cumulative sum of the
 // probabilities is computed and the first index with a summed probability greater than a randomly
 // chosen value is selected.
-fn random_sample(probs: &Tensor) -> usize {
+fn random_sample(probs: &Tensor) -> Result<u8, candle_core::Error> {
     let random_val: f32 = rand::rng().random_range(0.0..1.0);
 
-    let cumulative_sum = probs
-        .cumsum(1)
-        .unwrap()
-        .squeeze(0)
-        .unwrap()
-        .to_vec1()
-        .unwrap();
+    let cumulative_sum = probs.cumsum(1)?.squeeze(0)?.to_vec1()?;
     for (index, &sum) in cumulative_sum.iter().enumerate() {
         if random_val <= sum {
-            return index;
+            return Ok(index as u8);
         }
     }
 
-    return cumulative_sum.len() - 1;
+    Ok((cumulative_sum.len() - 1) as u8)
 }
 
 // Tokenize a list of strings for neural network training.
@@ -165,7 +135,7 @@ fn random_sample(probs: &Tensor) -> usize {
 // split into two lists, each character of the word is paired with it's next, so that the input
 // tensor is every character of a word aligned with the target tensor of every next character. The
 // characters are normalized to integers for later numerical calculations.
-fn tokenize(words: Vec<String>, device: &Device) -> (Tensor, Tensor) {
+fn tokenize(words: Vec<String>, device: &Device) -> Result<(Tensor, Tensor), candle_core::Error> {
     let delimiter: char = crate::data::LETTERS[0];
     let mut input: Vec<u8> = vec![];
     let mut target: Vec<u8> = vec![];
@@ -194,10 +164,10 @@ fn tokenize(words: Vec<String>, device: &Device) -> (Tensor, Tensor) {
     }
 
     let input_len = input.len();
-    let input_tensor = Tensor::from_vec(input, input_len, device).unwrap();
+    let input_tensor = Tensor::from_vec(input, input_len, device)?;
 
     let target_len = target.len();
-    let target_tensor = Tensor::from_vec(target, target_len, device).unwrap();
+    let target_tensor = Tensor::from_vec(target, target_len, device)?;
 
-    return (input_tensor, target_tensor);
+    Ok((input_tensor, target_tensor))
 }

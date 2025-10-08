@@ -28,7 +28,7 @@ const DEFAULT_LEARN_RATE: f32 = 0.1;
 const DEFAULT_GENERATE: usize = 20;
 
 // Parse the command line options.
-pub fn parse_args() -> Options {
+pub fn parse_args() -> Result<Options, Box<dyn std::error::Error>> {
     let mut options = Options {
         data: DEFAULT_DATA_PATH.to_string(),
         device: DEFAULT_DEVICE.to_string(),
@@ -77,7 +77,7 @@ pub fn parse_args() -> Options {
             }
             "--iterations" => {
                 if let Some(iterations) = args.pop() {
-                    options.iterations = str::parse::<usize>(iterations.as_str()).unwrap();
+                    options.iterations = str::parse::<usize>(iterations.as_str())?;
                 } else {
                     println!("missing the number portion of the --iterations flag");
                     print_help();
@@ -86,7 +86,7 @@ pub fn parse_args() -> Options {
             }
             "--batch-size" => {
                 if let Some(size) = args.pop() {
-                    options.batch_size = str::parse::<usize>(size.as_str()).unwrap();
+                    options.batch_size = str::parse::<usize>(size.as_str())?;
                 } else {
                     println!("missing the size portion of the --batch-size flag");
                     print_help();
@@ -95,7 +95,7 @@ pub fn parse_args() -> Options {
             }
             "--block-size" => {
                 if let Some(size) = args.pop() {
-                    options.block_size = str::parse::<usize>(size.as_str()).unwrap();
+                    options.block_size = str::parse::<usize>(size.as_str())?;
                 } else {
                     println!("missing the size portion of the --block-size flag");
                     print_help();
@@ -104,7 +104,7 @@ pub fn parse_args() -> Options {
             }
             "--embedding-size" => {
                 if let Some(size) = args.pop() {
-                    options.embedding_size = str::parse::<usize>(size.as_str()).unwrap();
+                    options.embedding_size = str::parse::<usize>(size.as_str())?;
                 } else {
                     println!("missing the size portion of the --embedding-size flag");
                     print_help();
@@ -113,7 +113,7 @@ pub fn parse_args() -> Options {
             }
             "--hidden-size" => {
                 if let Some(size) = args.pop() {
-                    options.hidden_size = str::parse::<usize>(size.as_str()).unwrap();
+                    options.hidden_size = str::parse::<usize>(size.as_str())?;
                 } else {
                     println!("missing the size portion of the --hidden-size flag");
                     print_help();
@@ -122,7 +122,7 @@ pub fn parse_args() -> Options {
             }
             "--learn-rate" => {
                 if let Some(rate) = args.pop() {
-                    options.learn_rate = str::parse::<f32>(rate.as_str()).unwrap();
+                    options.learn_rate = str::parse::<f32>(rate.as_str())?;
                 } else {
                     println!("missing the rate portion of the --learn-rate flag");
                     print_help();
@@ -131,7 +131,7 @@ pub fn parse_args() -> Options {
             }
             "--generate" => {
                 if let Some(count) = args.pop() {
-                    options.generate = str::parse::<usize>(count.as_str()).unwrap();
+                    options.generate = str::parse::<usize>(count.as_str())?;
                 } else {
                     println!("missing the number portion of the --generate flag");
                     print_help();
@@ -145,42 +145,21 @@ pub fn parse_args() -> Options {
         }
     }
 
-    return options;
+    Ok(options)
 }
 
 // Print a usage help message.
 fn print_help() {
     println!("usage:");
     println!("command");
-    println!(
-        "\t--data           <data path>      ({})",
-        DEFAULT_DATA_PATH
-    );
+    println!("\t--data           <data path>      ({})", DEFAULT_DATA_PATH);
     println!("\t--device         <metal|cuda|cpu> ({})", DEFAULT_DEVICE);
     println!("\t--method         <nn|mlp>         ({})", DEFAULT_METHOD);
-    println!(
-        "\t--iterations     <num>            ({})",
-        DEFAULT_ITERATIONS
-    );
-    println!(
-        "\t--batch-size     <num>            ({})",
-        DEFAULT_BATCH_SIZE
-    );
-    println!(
-        "\t--block-size     <num>            ({})",
-        DEFAULT_BLOCK_SIZE
-    );
-    println!(
-        "\t--embedding-size <num>            ({})",
-        DEFAULT_EMBEDDING_SIZE
-    );
-    println!(
-        "\t--hidden-size    <num>            ({})",
-        DEFAULT_HIDDEN_SIZE
-    );
-    println!(
-        "\t--learn-rate     <rate>           ({})",
-        DEFAULT_LEARN_RATE
-    );
+    println!("\t--iterations     <num>            ({})", DEFAULT_ITERATIONS);
+    println!("\t--batch-size     <num>            ({})", DEFAULT_BATCH_SIZE);
+    println!("\t--block-size     <num>            ({})", DEFAULT_BLOCK_SIZE);
+    println!("\t--embedding-size <num>            ({})", DEFAULT_EMBEDDING_SIZE);
+    println!("\t--hidden-size    <num>            ({})", DEFAULT_HIDDEN_SIZE);
+    println!("\t--learn-rate     <rate>           ({})", DEFAULT_LEARN_RATE);
     println!("\t--generate       <num>            ({})", DEFAULT_GENERATE);
 }

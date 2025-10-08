@@ -9,7 +9,7 @@ use std::io::Write;
 // The vocabulary is hardcoded to the 26 letters plus the special delimiter character.
 const VOCAB_SIZE: usize = 27;
 
-pub fn run(mut data: Vec<String>, device: Device, options: crate::options::Options) {
+pub fn run(mut data: Vec<String>, device: Device, options: crate::options::Options) -> Result<(), candle_core::Error> {
     println!("😎 multilayer perceptron network");
 
     // Randomize the input data, then break it into different data sets.
@@ -24,44 +24,39 @@ pub fn run(mut data: Vec<String>, device: Device, options: crate::options::Optio
     let training_end = (data.len() as f64 * 0.8).round() as usize;
     let dev_end = (data.len() as f64 * 0.9).round() as usize;
 
-    let (input, target) = tokenize(&data[..training_end].to_vec(), &device, &options);
-    let (input_dev, target_dev) =
-        tokenize(&data[training_end..dev_end].to_vec(), &device, &options);
-    let (_intput_test, _target_test) = tokenize(&data[dev_end..].to_vec(), &device, &options);
+    let (input, target) = tokenize(&data[..training_end].to_vec(), &device, &options)?;
+    let (input_dev, target_dev) = tokenize(&data[training_end..dev_end].to_vec(), &device, &options)?;
+    let (_intput_test, _target_test) = tokenize(&data[dev_end..].to_vec(), &device, &options)?;
 
     // Model parameters.
-    let c = Var::rand(0f32, 1f32, (VOCAB_SIZE, options.embedding_size), &device).unwrap();
+    let c = Var::rand(0f32, 1f32, (VOCAB_SIZE, options.embedding_size), &device)?;
     // The gain (max value) is discussed in the "Delving Deep into Rectifier" paper by Kaiming He.
     // gain = (5/3) * sqrt(embedding_size * block_size).
     let weights_1 = Var::rand(
         0f32,
         (5.0 / 3.0) / (options.embedding_size as f32 * options.block_size as f32).sqrt(),
-        (
-            options.embedding_size * options.block_size,
-            options.hidden_size,
-        ),
+        (options.embedding_size * options.block_size, options.hidden_size),
         &device,
-    )
-    .unwrap();
-    let biases_1 = Var::rand(0f32, 0.01f32, options.hidden_size, &device).unwrap();
-    let weights_2 = Var::rand(0f32, 0.01f32, (options.hidden_size, VOCAB_SIZE), &device).unwrap();
-    let biases_2 = Var::zeros(VOCAB_SIZE, candle_core::DType::F32, &device).unwrap();
+    )?;
+    let biases_1 = Var::rand(0f32, 0.01f32, options.hidden_size, &device)?;
+    let weights_2 = Var::rand(0f32, 0.01f32, (options.hidden_size, VOCAB_SIZE), &device)?;
+    let biases_2 = Var::zeros(VOCAB_SIZE, candle_core::DType::F32, &device)?;
 
     let mut parameters = vec![c, weights_1, biases_1, weights_2, biases_2];
 
     println!(
-        "🤯 running training with {} parameters, {} iterations, and hyperparameters:\n\tembedding layers {}, hidden layer neurons {}, training batch size {}, tokenization block size {}, learning rate {}\n",
-        parameters
-            .iter()
-            .map(|elem| elem.elem_count())
-            .sum::<usize>(),
+        "🤯 running training with {} parameters, {} iterations, and hyperparameters:",
+        parameters.iter().map(|elem| elem.elem_count()).sum::<usize>(),
         options.iterations,
+    );
+    println!("\tembedding layers {}, hidden layer neurons {}, training batch size {}, tokenization block size {}, learning rate {}",
         options.embedding_size,
         options.hidden_size,
         options.batch_size,
         options.block_size,
         options.learn_rate,
     );
+    println!("");
 
     // Training rounds.
     //
@@ -70,52 +65,36 @@ pub fn run(mut data: Vec<String>, device: Device, options: crate::options::Optio
     // round. In the tradeoff between calculating the exact gradient every round versus running
     // more rounds, running more rounds shows better results.
     for count in 0..options.iterations {
-        let batch_indices =
-            Tensor::rand(0f32, input.dims()[0] as f32, (options.batch_size,), &device)
-                .unwrap()
-                .to_dtype(candle_core::DType::U32)
-                .unwrap();
-        let batch = input
-            .index_select(&batch_indices.flatten_all().unwrap(), 0)
-            .unwrap();
+        let batch_indices = Tensor::rand(0f32, input.dims()[0] as f32, (options.batch_size,), &device)?
+            .to_dtype(candle_core::DType::U32)?;
+        let batch = input.index_select(&batch_indices.flatten_all()?, 0)?;
 
         let loss = forward_pass(
             &batch,
-            &target
-                .index_select(&batch_indices.flatten_all().unwrap(), 0)
-                .unwrap(),
+            &target.index_select(&batch_indices.flatten_all()?, 0)?,
             &parameters,
             &options,
-        );
+        )?;
 
-        backward_pass(&loss, &mut parameters, &device, &options);
+        backward_pass(&loss, &mut parameters, &device, &options)?;
 
         // Print iteration updates.
         if count % 100 == 0 {
-            print!(
-                "{:.0}%\t",
-                100. * (count as f64) / (options.iterations as f64)
-            );
+            print!("{:.0}%\t", 100. * (count as f64) / (options.iterations as f64));
         }
         print!(".");
         if count > 0 && (count % 100 == 99 || count == options.iterations - 1) {
             print!("\n");
         }
-        io::stdout().flush().unwrap();
+        io::stdout().flush()?;
     }
 
-    let training_loss = forward_pass(&input, &target, &parameters, &options);
-    let validation_loss = forward_pass(&input_dev, &target_dev, &parameters, &options);
+    let training_loss = forward_pass(&input, &target, &parameters, &options)?;
+    let validation_loss = forward_pass(&input_dev, &target_dev, &parameters, &options)?;
 
     println!("\n🤗🤗🤗🤗\n");
-    println!(
-        "🤔 training loss {}",
-        training_loss.to_vec0::<f32>().unwrap()
-    );
-    println!(
-        "🤔 validation loss {}",
-        validation_loss.to_vec0::<f32>().unwrap()
-    );
+    println!("🤔 training loss {}", training_loss.to_vec0::<f32>()?);
+    println!("🤔 validation loss {}", validation_loss.to_vec0::<f32>()?);
     println!("🫣 generating {} new strings:\n", options.generate);
 
     let c = parameters[0].as_tensor();
@@ -129,35 +108,19 @@ pub fn run(mut data: Vec<String>, device: Device, options: crate::options::Optio
         let mut context: Vec<u8> = vec![0; options.block_size];
 
         loop {
-            let embeddings = c
-                .index_select(
-                    &Tensor::new(context.clone(), &device)
-                        .unwrap()
-                        .flatten_all()
-                        .unwrap(),
-                    0,
-                )
-                .unwrap();
+            let embeddings = c.index_select(&Tensor::new(context.clone(), &device)?.flatten_all()?, 0)?;
 
             let h = embeddings
-                .reshape(((), weights_1.dims()[0]))
-                .unwrap()
-                .matmul(&weights_1)
-                .unwrap()
-                .broadcast_add(&biases_1)
-                .unwrap()
-                .tanh()
-                .unwrap();
+                .reshape(((), weights_1.dims()[0]))?
+                .matmul(&weights_1)?
+                .broadcast_add(&biases_1)?
+                .tanh()?;
 
-            let logits = h
-                .matmul(&weights_2)
-                .unwrap()
-                .broadcast_add(&biases_2)
-                .unwrap();
+            let logits = h.matmul(&weights_2)?.broadcast_add(&biases_2)?;
 
-            let probs = ops::softmax(&logits, 1).unwrap();
+            let probs = ops::softmax(&logits, 1)?;
 
-            let position = random_sample(&probs);
+            let position = random_sample(&probs)?;
             if position == 0 {
                 break;
             }
@@ -169,6 +132,8 @@ pub fn run(mut data: Vec<String>, device: Device, options: crate::options::Optio
 
         println!("    {}", output);
     }
+
+    Ok(())
 }
 
 fn forward_pass(
@@ -176,7 +141,7 @@ fn forward_pass(
     target: &Tensor,
     parameters: &Vec<Var>,
     _options: &crate::options::Options,
-) -> Tensor {
+) -> Result<Tensor, candle_core::Error> {
     let c = parameters[0].as_tensor();
     let weights_1 = parameters[1].as_tensor();
     let biases_1 = parameters[2].as_tensor();
@@ -184,29 +149,20 @@ fn forward_pass(
     let biases_2 = parameters[4].as_tensor();
 
     // Embed the input into vectors.
-    let embeddings = c.index_select(&input.flatten_all().unwrap(), 0).unwrap();
+    let embeddings = c.index_select(&input.flatten_all()?, 0)?;
 
     // Hidden layer pre-activation with weights and biases and activation with tanh.
     let h = embeddings
-        .reshape(((), weights_1.dims()[0]))
-        .unwrap()
-        .matmul(&weights_1)
-        .unwrap()
-        .broadcast_add(&biases_1)
-        .unwrap()
-        .tanh()
-        .unwrap();
+        .reshape(((), weights_1.dims()[0]))?
+        .matmul(&weights_1)?
+        .broadcast_add(&biases_1)?
+        .tanh()?;
 
     // Output layer.
-    let logits = h
-        .matmul(&weights_2)
-        .unwrap()
-        .broadcast_add(&biases_2)
-        .unwrap();
+    let logits = h.matmul(&weights_2)?.broadcast_add(&biases_2)?;
 
     // Loss function.
-    return loss::cross_entropy(&logits, &target.to_dtype(candle_core::DType::I64).unwrap())
-        .unwrap();
+    loss::cross_entropy(&logits, &target.to_dtype(candle_core::DType::I64)?)
 }
 
 fn backward_pass(
@@ -214,27 +170,24 @@ fn backward_pass(
     parameters: &mut Vec<Var>,
     device: &Device,
     options: &crate::options::Options,
-) {
-    let loss_grad = loss.backward().unwrap();
+) -> Result<(), candle_core::Error> {
+    let loss_grad = loss.backward()?;
 
     // Zero the gradients on each parameter, then adjust the parameter by learning rate * loss gradient.
     for index in 0..parameters.len() {
         let param = parameters[index].as_tensor();
-        param.backward().unwrap().remove(param).unwrap();
+        param.backward()?.remove(param);
 
-        let weights_grad = loss_grad.get(param).unwrap();
+        let weights_grad = loss_grad
+            .get(param)
+            .ok_or(candle_core::Error::Msg("missing loss gradient".to_string()))?;
 
         parameters[index] = Var::from_tensor(
-            &param
-                .broadcast_sub(
-                    &weights_grad
-                        .broadcast_mul(&Tensor::new(&[options.learn_rate], device).unwrap())
-                        .unwrap(),
-                )
-                .unwrap(),
-        )
-        .unwrap();
+            &param.broadcast_sub(&weights_grad.broadcast_mul(&Tensor::new(&[options.learn_rate], device)?)?)?,
+        )?;
     }
+
+    Ok(())
 }
 
 // Take a random sample from the given probability tensor.
@@ -242,23 +195,17 @@ fn backward_pass(
 // In order to take the probability distribution into account, a cumulative sum of the
 // probabilities is computed and the first index with a summed probability greater than a randomly
 // chosen value is selected.
-fn random_sample(probs: &Tensor) -> usize {
+fn random_sample(probs: &Tensor) -> Result<usize, candle_core::Error> {
     let random_val: f32 = rand::rng().random_range(0.0..1.0);
 
-    let cumulative_sum = probs
-        .cumsum(1)
-        .unwrap()
-        .squeeze(0)
-        .unwrap()
-        .to_vec1()
-        .unwrap();
+    let cumulative_sum = probs.cumsum(1)?.squeeze(0)?.to_vec1()?;
     for (index, &sum) in cumulative_sum.iter().enumerate() {
         if random_val <= sum {
-            return index;
+            return Ok(index);
         }
     }
 
-    return cumulative_sum.len() - 1;
+    Ok(cumulative_sum.len() - 1)
 }
 
 // Tokenize a list of strings for neural network training.
@@ -268,7 +215,7 @@ fn tokenize(
     words: &Vec<String>,
     device: &Device,
     options: &crate::options::Options,
-) -> (Tensor, Tensor) {
+) -> Result<(Tensor, Tensor), candle_core::Error> {
     let delimiter: char = crate::data::LETTERS[0];
     let mut input: Vec<Vec<u8>> = vec![];
     let mut target: Vec<u8> = vec![];
@@ -293,11 +240,10 @@ fn tokenize(
         input.iter().flatten().copied().collect(),
         (input.len(), input[0].len()),
         device,
-    )
-    .unwrap();
+    )?;
 
     let target_len = target.len();
-    let target_tensor = Tensor::from_vec(target, target_len, device).unwrap();
+    let target_tensor = Tensor::from_vec(target, target_len, device)?;
 
-    return (input_tensor, target_tensor);
+    Ok((input_tensor, target_tensor))
 }
