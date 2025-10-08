@@ -31,9 +31,11 @@ pub fn run(mut data: Vec<String>, device: Device, options: crate::options::Optio
 
     // Model parameters.
     let c = Var::rand(0f32, 1f32, (VOCAB_SIZE, options.embedding_size), &device).unwrap();
+    // The gain (max value) is discussed in the "Delving Deep into Rectifier" paper by Kaiming He.
+    // gain = (5/3) * sqrt(embedding_size * block_size).
     let weights_1 = Var::rand(
         0f32,
-        1f32,
+        (5.0 / 3.0) / (options.embedding_size as f32 * options.block_size as f32).sqrt(),
         (
             options.embedding_size * options.block_size,
             options.hidden_size,
@@ -41,9 +43,9 @@ pub fn run(mut data: Vec<String>, device: Device, options: crate::options::Optio
         &device,
     )
     .unwrap();
-    let biases_1 = Var::rand(0f32, 1f32, options.hidden_size, &device).unwrap();
-    let weights_2 = Var::rand(0f32, 1f32, (options.hidden_size, VOCAB_SIZE), &device).unwrap();
-    let biases_2 = Var::rand(0f32, 1f32, VOCAB_SIZE, &device).unwrap();
+    let biases_1 = Var::rand(0f32, 0.01f32, options.hidden_size, &device).unwrap();
+    let weights_2 = Var::rand(0f32, 0.01f32, (options.hidden_size, VOCAB_SIZE), &device).unwrap();
+    let biases_2 = Var::zeros(VOCAB_SIZE, candle_core::DType::F32, &device).unwrap();
 
     let mut parameters = vec![c, weights_1, biases_1, weights_2, biases_2];
 
