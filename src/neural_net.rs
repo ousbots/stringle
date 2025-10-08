@@ -1,3 +1,4 @@
+use crate::errors::VibeError;
 use candle_core::{Device, Tensor, Var};
 use candle_nn::encoding;
 use rand::Rng;
@@ -5,7 +6,7 @@ use std::io;
 use std::io::Write;
 
 // Run the neural network training and generation.
-pub fn run(data: Vec<String>, device: Device, options: crate::options::Options) -> Result<(), candle_core::Error> {
+pub fn run(data: Vec<String>, device: Device, options: crate::options::Options) -> Result<(), VibeError> {
     println!("🥸 basic neural network");
 
     let (input, target) = tokenize(data, &device)?;
@@ -29,7 +30,7 @@ pub fn run(data: Vec<String>, device: Device, options: crate::options::Options) 
         let loss_grad = loss.backward()?;
         let weights_grad = loss_grad
             .get(&weights)
-            .ok_or(candle_core::Error::Msg("missing loss gradient".to_string()))?;
+            .ok_or_else(|| VibeError::new("missing loss gradient"))?;
 
         weights = Var::from_tensor(
             &weights.broadcast_sub(&weights_grad.broadcast_mul(&Tensor::new(&[options.learn_rate], &device)?)?)?,
@@ -88,7 +89,7 @@ pub fn run(data: Vec<String>, device: Device, options: crate::options::Options) 
 // squared to ensure they're positive. These squared weight values are commonly called log-counts,
 // or logits. Finally, the loss value is calculated with a weights decay as:
 // (logits^2 / sum(logits)) - 0.1 * (w^2).mean().
-fn forward_pass(input: &Tensor, target: &Tensor, weights: &Tensor) -> Result<Tensor, candle_core::Error> {
+fn forward_pass(input: &Tensor, target: &Tensor, weights: &Tensor) -> Result<Tensor, VibeError> {
     // One-hot encoding of all inputs with a depth of 27 for the 26 letters + delimiter.
     let input_enc = encoding::one_hot(input.clone(), 27, 1f32, 0f32)?;
 
@@ -115,7 +116,7 @@ fn forward_pass(input: &Tensor, target: &Tensor, weights: &Tensor) -> Result<Ten
 // In order to take the probability distribution into account, a cumulative sum of the
 // probabilities is computed and the first index with a summed probability greater than a randomly
 // chosen value is selected.
-fn random_sample(probs: &Tensor) -> Result<u8, candle_core::Error> {
+fn random_sample(probs: &Tensor) -> Result<u8, VibeError> {
     let random_val: f32 = rand::rng().random_range(0.0..1.0);
 
     let cumulative_sum = probs.cumsum(1)?.squeeze(0)?.to_vec1()?;
@@ -135,7 +136,7 @@ fn random_sample(probs: &Tensor) -> Result<u8, candle_core::Error> {
 // split into two lists, each character of the word is paired with it's next, so that the input
 // tensor is every character of a word aligned with the target tensor of every next character. The
 // characters are normalized to integers for later numerical calculations.
-fn tokenize(words: Vec<String>, device: &Device) -> Result<(Tensor, Tensor), candle_core::Error> {
+fn tokenize(words: Vec<String>, device: &Device) -> Result<(Tensor, Tensor), VibeError> {
     let delimiter: char = crate::data::LETTERS[0];
     let mut input: Vec<u8> = vec![];
     let mut target: Vec<u8> = vec![];

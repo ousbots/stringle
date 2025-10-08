@@ -1,5 +1,5 @@
+use crate::errors::VibeError;
 use std::env;
-use std::process;
 
 // User provided runtime arguments.
 #[derive(Debug)]
@@ -28,7 +28,7 @@ const DEFAULT_LEARN_RATE: f32 = 0.1;
 const DEFAULT_GENERATE: usize = 20;
 
 // Parse the command line options.
-pub fn parse_args() -> Result<Options, Box<dyn std::error::Error>> {
+pub fn parse_args() -> Result<Options, VibeError> {
     let mut options = Options {
         data: DEFAULT_DATA_PATH.to_string(),
         device: DEFAULT_DEVICE.to_string(),
@@ -52,95 +52,85 @@ pub fn parse_args() -> Result<Options, Box<dyn std::error::Error>> {
                 if let Some(path) = args.pop() {
                     options.data = path;
                 } else {
-                    println!("missing the path portion of the --data flag");
                     print_help();
-                    process::exit(-1);
+                    return Err(VibeError::new("missing the path portion of the --data flag"));
                 }
             }
             "--device" => {
                 if let Some(path) = args.pop() {
                     options.device = path;
                 } else {
-                    println!("missing the device portion of the --device flag");
                     print_help();
-                    process::exit(-1);
+                    return Err(VibeError::new("missing the device portion of the --device flag"));
                 }
             }
             "--method" => {
                 if let Some(method) = args.pop() {
                     options.method = method;
                 } else {
-                    println!("missing the method portion of the --method flag");
                     print_help();
-                    process::exit(-1);
+                    return Err(VibeError::new("missing the method portion of the --method flag"));
                 }
             }
             "--iterations" => {
                 if let Some(iterations) = args.pop() {
                     options.iterations = str::parse::<usize>(iterations.as_str())?;
                 } else {
-                    println!("missing the number portion of the --iterations flag");
                     print_help();
-                    process::exit(-1);
+                    return Err(VibeError::new("missing the number portion of the --iterations flag"));
                 }
             }
             "--batch-size" => {
                 if let Some(size) = args.pop() {
                     options.batch_size = str::parse::<usize>(size.as_str())?;
                 } else {
-                    println!("missing the size portion of the --batch-size flag");
                     print_help();
-                    process::exit(-1);
+                    return Err(VibeError::new("missing the size portion of the --batch-size flag"));
                 }
             }
             "--block-size" => {
                 if let Some(size) = args.pop() {
                     options.block_size = str::parse::<usize>(size.as_str())?;
                 } else {
-                    println!("missing the size portion of the --block-size flag");
                     print_help();
-                    process::exit(-1);
+                    return Err(VibeError::new("missing the size portion of the --block-size flag"));
                 }
             }
             "--embedding-size" => {
                 if let Some(size) = args.pop() {
                     options.embedding_size = str::parse::<usize>(size.as_str())?;
                 } else {
-                    println!("missing the size portion of the --embedding-size flag");
                     print_help();
-                    process::exit(-1);
+                    return Err(VibeError::new("missing the size portion of the --embedding-size flag"));
                 }
             }
             "--hidden-size" => {
                 if let Some(size) = args.pop() {
                     options.hidden_size = str::parse::<usize>(size.as_str())?;
                 } else {
-                    println!("missing the size portion of the --hidden-size flag");
                     print_help();
-                    process::exit(-1);
+                    return Err(VibeError::new("missing the size portion of the --hidden-size flag"));
                 }
             }
             "--learn-rate" => {
                 if let Some(rate) = args.pop() {
                     options.learn_rate = str::parse::<f32>(rate.as_str())?;
                 } else {
-                    println!("missing the rate portion of the --learn-rate flag");
                     print_help();
-                    process::exit(-1);
+                    return Err(VibeError::new("missing the rate portion of the --learn-rate flag"));
                 }
             }
             "--generate" => {
                 if let Some(count) = args.pop() {
                     options.generate = str::parse::<usize>(count.as_str())?;
                 } else {
-                    println!("missing the number portion of the --generate flag");
                     print_help();
-                    process::exit(-1);
+                    return Err(VibeError::new("missing the number portion of the --generate flag"));
                 }
             }
             _ => {
                 print_help();
-                process::exit(-1);
+                return Err(VibeError::new(format!("unrecognized argument: {}", arg)));
             }
         }
     }

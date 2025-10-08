@@ -1,3 +1,4 @@
+use crate::errors::VibeError;
 use candle_core::{Device, Tensor, Var};
 use candle_nn::loss;
 use candle_nn::ops;
@@ -9,7 +10,7 @@ use std::io::Write;
 // The vocabulary is hardcoded to the 26 letters plus the special delimiter character.
 const VOCAB_SIZE: usize = 27;
 
-pub fn run(mut data: Vec<String>, device: Device, options: crate::options::Options) -> Result<(), candle_core::Error> {
+pub fn run(mut data: Vec<String>, device: Device, options: crate::options::Options) -> Result<(), VibeError> {
     println!("😎 multilayer perceptron network");
 
     // Randomize the input data, then break it into different data sets.
@@ -141,7 +142,7 @@ fn forward_pass(
     target: &Tensor,
     parameters: &Vec<Var>,
     _options: &crate::options::Options,
-) -> Result<Tensor, candle_core::Error> {
+) -> Result<Tensor, VibeError> {
     let c = parameters[0].as_tensor();
     let weights_1 = parameters[1].as_tensor();
     let biases_1 = parameters[2].as_tensor();
@@ -162,7 +163,10 @@ fn forward_pass(
     let logits = h.matmul(&weights_2)?.broadcast_add(&biases_2)?;
 
     // Loss function.
-    loss::cross_entropy(&logits, &target.to_dtype(candle_core::DType::I64)?)
+    Ok(loss::cross_entropy(
+        &logits,
+        &target.to_dtype(candle_core::DType::I64)?,
+    )?)
 }
 
 fn backward_pass(
@@ -170,7 +174,7 @@ fn backward_pass(
     parameters: &mut Vec<Var>,
     device: &Device,
     options: &crate::options::Options,
-) -> Result<(), candle_core::Error> {
+) -> Result<(), VibeError> {
     let loss_grad = loss.backward()?;
 
     // Zero the gradients on each parameter, then adjust the parameter by learning rate * loss gradient.
@@ -180,7 +184,7 @@ fn backward_pass(
 
         let weights_grad = loss_grad
             .get(param)
-            .ok_or(candle_core::Error::Msg("missing loss gradient".to_string()))?;
+            .ok_or_else(|| VibeError::new("missing loss gradient"))?;
 
         parameters[index] = Var::from_tensor(
             &param.broadcast_sub(&weights_grad.broadcast_mul(&Tensor::new(&[options.learn_rate], device)?)?)?,
@@ -195,7 +199,7 @@ fn backward_pass(
 // In order to take the probability distribution into account, a cumulative sum of the
 // probabilities is computed and the first index with a summed probability greater than a randomly
 // chosen value is selected.
-fn random_sample(probs: &Tensor) -> Result<usize, candle_core::Error> {
+fn random_sample(probs: &Tensor) -> Result<usize, VibeError> {
     let random_val: f32 = rand::rng().random_range(0.0..1.0);
 
     let cumulative_sum = probs.cumsum(1)?.squeeze(0)?.to_vec1()?;
@@ -215,7 +219,7 @@ fn tokenize(
     words: &Vec<String>,
     device: &Device,
     options: &crate::options::Options,
-) -> Result<(Tensor, Tensor), candle_core::Error> {
+) -> Result<(Tensor, Tensor), VibeError> {
     let delimiter: char = crate::data::LETTERS[0];
     let mut input: Vec<Vec<u8>> = vec![];
     let mut target: Vec<u8> = vec![];

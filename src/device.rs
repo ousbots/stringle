@@ -1,29 +1,26 @@
+use crate::errors::VibeError;
 use candle_core::Device;
 
 // Open the given device for data processing.
-pub fn open_device(device_name: &String) -> Device {
-    let mut device = Device::Cpu;
-    match device_name.trim().to_lowercase().as_str() {
+pub fn open_device(device_name: &String) -> Result<Device, VibeError> {
+    let device = match device_name.trim().to_lowercase().as_str() {
         "cpu" => {
             println!("🧠 using the CPU for processing");
-            device = Device::Cpu;
+            Device::Cpu
         }
         "cuda" => {
             println!("🧠 using cuda for processing");
-            device = Device::new_cuda(0).unwrap_or_else(|error| {
-                panic!("unable to open cuda device: {error:?}");
-            });
+            Device::new_cuda(0).map_err(|e| VibeError::new(format!("unable to open cuda device: {}", e)))?
         }
         "metal" => {
             println!("🧠 using metal for processing");
-            device = Device::new_metal(0).unwrap_or_else(|error| {
-                panic!("unable to open metal device: {error:?}");
-            });
+            Device::new_metal(0).map_err(|e| VibeError::new(format!("unable to open metal device: {}", e)))?
         }
         _ => {
-            println!("🧠 invalid device name {device_name:?}, falling back to CPU for processing")
+            println!("🧠 invalid device name {device_name:?}, falling back to CPU for processing");
+            Device::Cpu
         }
-    }
+    };
 
-    return device;
+    Ok(device)
 }
