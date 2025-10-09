@@ -5,23 +5,24 @@ mod errors;
 mod mlp;
 mod neural_net;
 mod options;
+mod ui;
 
 use errors::VibeError;
 
 fn main() -> Result<(), VibeError> {
-    let mut state = app::App::new();
+    let mut app = app::App::new();
 
-    options::parse_args(&mut state.options)?;
+    options::parse_args(&mut app.options)?;
 
-    state.run()?;
+    app.run()?;
 
-    device::open_device(&mut state)?;
-    let data = data::parse_data(&state.options.data)?;
+    device::open_device(&mut app)?;
+    let data = data::parse_data(&app.options.data)?;
 
-    match state.options.method.as_str() {
-        "nn" => neural_net::run(data, state.device, state.options)?,
-        "mlp" => mlp::run(data, state.device, state.options)?,
-        _ => println!("invalid method option: {}", state.options.method),
+    match app.options.method.as_str() {
+        "nn" => neural_net::run(data, app.device, app.options)?,
+        "mlp" => mlp::run(data, app.device, app.options)?,
+        _ => println!("invalid method option: {}", app.options.method),
     }
 
     Ok(())
