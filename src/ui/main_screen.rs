@@ -1,4 +1,4 @@
-use crate::options::Options;
+use crate::app::options::Options;
 use crate::ui::{colors::Palette, logo};
 
 use ratatui::{

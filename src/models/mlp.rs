@@ -1,4 +1,7 @@
-use crate::errors::VibeError;
+use crate::app::options::Options;
+use crate::error::VibeError;
+use crate::models::data;
+
 use candle_core::{Device, Tensor, Var};
 use candle_nn::loss;
 use candle_nn::ops;
@@ -10,7 +13,7 @@ use std::io::Write;
 // The vocabulary is hardcoded to the 26 letters plus the special delimiter character.
 const VOCAB_SIZE: usize = 27;
 
-pub fn run(mut data: Vec<String>, device: Device, options: crate::options::Options) -> Result<(), VibeError> {
+pub fn run(mut data: Vec<String>, device: Device, options: Options) -> Result<(), VibeError> {
     println!("😎 multilayer perceptron network");
 
     // Randomize the input data, then break it into different data sets.
@@ -125,7 +128,7 @@ pub fn run(mut data: Vec<String>, device: Device, options: crate::options::Optio
             if position == 0 {
                 break;
             }
-            output.push(crate::data::itol(position as u8));
+            output.push(data::itol(position as u8));
 
             context.remove(0);
             context.push(position as u8);
@@ -141,7 +144,7 @@ fn forward_pass(
     input: &Tensor,
     target: &Tensor,
     parameters: &Vec<Var>,
-    _options: &crate::options::Options,
+    _options: &Options,
 ) -> Result<Tensor, VibeError> {
     let c = parameters[0].as_tensor();
     let weights_1 = parameters[1].as_tensor();
@@ -173,7 +176,7 @@ fn backward_pass(
     loss: &Tensor,
     parameters: &mut Vec<Var>,
     device: &Device,
-    options: &crate::options::Options,
+    options: &Options,
 ) -> Result<(), VibeError> {
     let loss_grad = loss.backward()?;
 
@@ -215,12 +218,8 @@ fn random_sample(probs: &Tensor) -> Result<usize, VibeError> {
 // Tokenize a list of strings for neural network training.
 //
 // Strings are tokenized characterwise in blocks specified by options.block_size.
-fn tokenize(
-    words: &Vec<String>,
-    device: &Device,
-    options: &crate::options::Options,
-) -> Result<(Tensor, Tensor), VibeError> {
-    let delimiter: char = crate::data::LETTERS[0];
+fn tokenize(words: &Vec<String>, device: &Device, options: &Options) -> Result<(Tensor, Tensor), VibeError> {
+    let delimiter: char = data::LETTERS[0];
     let mut input: Vec<Vec<u8>> = vec![];
     let mut target: Vec<u8> = vec![];
 
@@ -231,7 +230,7 @@ fn tokenize(
         chars.push(delimiter);
 
         for letter in chars {
-            let letter_value = crate::data::ltoi(letter);
+            let letter_value = data::ltoi(letter);
             input.push(context.clone());
             target.push(letter_value);
 

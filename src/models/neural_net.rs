@@ -1,4 +1,7 @@
-use crate::errors::VibeError;
+use crate::app::options::Options;
+use crate::error::VibeError;
+use crate::models::data;
+
 use candle_core::{Device, Tensor, Var};
 use candle_nn::encoding;
 use rand::Rng;
@@ -6,7 +9,7 @@ use std::io;
 use std::io::Write;
 
 // Run the neural network training and generation.
-pub fn run(data: Vec<String>, device: Device, options: crate::options::Options) -> Result<(), VibeError> {
+pub fn run(data: Vec<String>, device: Device, options: Options) -> Result<(), VibeError> {
     println!("🥸 basic neural network");
 
     let (input, target) = tokenize(data, &device)?;
@@ -72,7 +75,7 @@ pub fn run(data: Vec<String>, device: Device, options: crate::options::Options) 
             if position == 0 {
                 break;
             }
-            output.push(crate::data::itol(position));
+            output.push(data::itol(position));
         }
 
         println!("    {}", output);
@@ -137,7 +140,7 @@ fn random_sample(probs: &Tensor) -> Result<u8, VibeError> {
 // tensor is every character of a word aligned with the target tensor of every next character. The
 // characters are normalized to integers for later numerical calculations.
 fn tokenize(words: Vec<String>, device: &Device) -> Result<(Tensor, Tensor), VibeError> {
-    let delimiter: char = crate::data::LETTERS[0];
+    let delimiter: char = data::LETTERS[0];
     let mut input: Vec<u8> = vec![];
     let mut target: Vec<u8> = vec![];
 
@@ -146,20 +149,20 @@ fn tokenize(words: Vec<String>, device: &Device) -> Result<(Tensor, Tensor), Vib
         let chars: Vec<char> = word.chars().collect();
         while index < word.len() {
             if index == 0 {
-                input.push(crate::data::ltoi(delimiter.clone()));
-                target.push(crate::data::ltoi(chars[index]));
+                input.push(data::ltoi(delimiter.clone()));
+                target.push(data::ltoi(chars[index]));
                 index += 1;
                 continue;
             }
 
             if index == word.len() - 1 {
-                input.push(crate::data::ltoi(chars[index]));
-                target.push(crate::data::ltoi(delimiter.clone()));
+                input.push(data::ltoi(chars[index]));
+                target.push(data::ltoi(delimiter.clone()));
                 break;
             }
 
-            input.push(crate::data::ltoi(chars[index]));
-            target.push(crate::data::ltoi(chars[index + 1]));
+            input.push(data::ltoi(chars[index]));
+            target.push(data::ltoi(chars[index + 1]));
             index += 1;
         }
     }

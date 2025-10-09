@@ -1,7 +1,8 @@
 /// The training data should be a list of strings separated by newlines. The data will be
 /// normalized to be lowercase ascii characters between a-z, any other input characters will b
 /// collapsed onto 'z'.
-use crate::errors::VibeError;
+use crate::error::VibeError;
+
 use std::fs;
 
 // The normalized set of letters used for training. The '.' character is a special character used

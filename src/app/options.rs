@@ -1,4 +1,4 @@
-use crate::errors::VibeError;
+use crate::error::VibeError;
 use std::env;
 
 const DEFAULT_DATA_PATH: &str = "data/names_short.txt";

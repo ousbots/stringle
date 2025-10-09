@@ -1,5 +1,5 @@
-use crate::app::App;
-use crate::errors::VibeError;
+use crate::app::app::App;
+use crate::error::VibeError;
 
 use candle_core::Device;
 

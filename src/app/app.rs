@@ -1,5 +1,8 @@
-use crate::errors::VibeError;
-use crate::options::Options;
+use crate::app::{
+    device,
+    options::{self, Options},
+};
+use crate::error::VibeError;
 use crate::ui::{generate_screen, main_screen};
 
 use candle_core::Device;
@@ -79,6 +82,9 @@ impl App {
     }
 
     pub fn run(&mut self) -> Result<(), VibeError> {
+        options::parse_args(&mut self.options)?;
+        device::open_device(self)?;
+
         enable_raw_mode()?;
         execute!(self.terminal.backend_mut(), EnterAlternateScreen)?;
 
