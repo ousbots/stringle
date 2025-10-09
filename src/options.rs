@@ -1,6 +1,17 @@
 use crate::errors::VibeError;
 use std::env;
 
+const DEFAULT_DATA_PATH: &str = "data/names_short.txt";
+const DEFAULT_DEVICE: &str = "cpu";
+const DEFAULT_METHOD: &str = "mlp";
+const DEFAULT_ITERATIONS: usize = 1000;
+const DEFAULT_BATCH_SIZE: usize = 512;
+const DEFAULT_BLOCK_SIZE: usize = 3;
+const DEFAULT_EMBEDDING_SIZE: usize = 5;
+const DEFAULT_HIDDEN_SIZE: usize = 1000;
+const DEFAULT_LEARN_RATE: f32 = 0.1;
+const DEFAULT_GENERATE: usize = 20;
+
 // User provided runtime arguments.
 #[derive(Debug)]
 pub struct Options {
@@ -16,32 +27,25 @@ pub struct Options {
     pub generate: usize,
 }
 
-const DEFAULT_DATA_PATH: &str = "data/names_short.txt";
-const DEFAULT_DEVICE: &str = "cpu";
-const DEFAULT_METHOD: &str = "mlp";
-const DEFAULT_ITERATIONS: usize = 1000;
-const DEFAULT_BATCH_SIZE: usize = 512;
-const DEFAULT_BLOCK_SIZE: usize = 3;
-const DEFAULT_EMBEDDING_SIZE: usize = 5;
-const DEFAULT_HIDDEN_SIZE: usize = 1000;
-const DEFAULT_LEARN_RATE: f32 = 0.1;
-const DEFAULT_GENERATE: usize = 20;
+impl Options {
+    pub fn new() -> Self {
+        Self {
+            data: DEFAULT_DATA_PATH.to_string(),
+            device: DEFAULT_DEVICE.to_string(),
+            method: DEFAULT_METHOD.to_string(),
+            iterations: DEFAULT_ITERATIONS,
+            batch_size: DEFAULT_BATCH_SIZE,
+            block_size: DEFAULT_BLOCK_SIZE,
+            embedding_size: DEFAULT_EMBEDDING_SIZE,
+            hidden_size: DEFAULT_HIDDEN_SIZE,
+            learn_rate: DEFAULT_LEARN_RATE,
+            generate: DEFAULT_GENERATE,
+        }
+    }
+}
 
 // Parse the command line options.
-pub fn parse_args() -> Result<Options, VibeError> {
-    let mut options = Options {
-        data: DEFAULT_DATA_PATH.to_string(),
-        device: DEFAULT_DEVICE.to_string(),
-        method: DEFAULT_METHOD.to_string(),
-        iterations: DEFAULT_ITERATIONS,
-        batch_size: DEFAULT_BATCH_SIZE,
-        block_size: DEFAULT_BLOCK_SIZE,
-        embedding_size: DEFAULT_EMBEDDING_SIZE,
-        hidden_size: DEFAULT_HIDDEN_SIZE,
-        learn_rate: DEFAULT_LEARN_RATE,
-        generate: DEFAULT_GENERATE,
-    };
-
+pub fn parse_args(options: &mut Options) -> Result<(), VibeError> {
     let mut args: Vec<String> = env::args().collect();
     args.reverse();
     args.pop();
@@ -135,7 +139,7 @@ pub fn parse_args() -> Result<Options, VibeError> {
         }
     }
 
-    Ok(options)
+    Ok(())
 }
 
 // Print a usage help message.

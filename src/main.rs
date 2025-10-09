@@ -1,3 +1,4 @@
+mod app;
 mod data;
 mod device;
 mod errors;
@@ -8,14 +9,19 @@ mod options;
 use errors::VibeError;
 
 fn main() -> Result<(), VibeError> {
-    let options = options::parse_args()?;
-    let device = device::open_device(&options.device)?;
-    let data = data::parse_data(&options.data)?;
+    let mut state = app::App::new();
 
-    match options.method.as_str() {
-        "nn" => neural_net::run(data, device, options)?,
-        "mlp" => mlp::run(data, device, options)?,
-        _ => return Err(VibeError::new(format!("invalid method option: {}", options.method))),
+    options::parse_args(&mut state.options)?;
+
+    state.run()?;
+
+    device::open_device(&mut state)?;
+    let data = data::parse_data(&state.options.data)?;
+
+    match state.options.method.as_str() {
+        "nn" => neural_net::run(data, state.device, state.options)?,
+        "mlp" => mlp::run(data, state.device, state.options)?,
+        _ => println!("invalid method option: {}", state.options.method),
     }
 
     Ok(())
