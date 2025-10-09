@@ -90,7 +90,7 @@ pub fn draw(frame: &mut Frame, options: &Options) {
         .border_type(BorderType::Rounded)
         .border_style(Palette::BORDER_COLOR)
         .padding(Padding::horizontal(1))
-        .title("Options");
+        .title("Training Options");
 
     frame.render_widget(Paragraph::new(options_lines).block(options_block), options_area);
 
