@@ -5,6 +5,8 @@ use crate::error::VibeError;
 
 use std::fs;
 
+pub const DEFAULT_DATA_PATH: &str = "data/names_short.txt";
+
 // The normalized set of letters used for training. The '.' character is a special character used
 // to designate the start and end of words.
 pub const LETTERS: &[char] = &[

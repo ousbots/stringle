@@ -1,5 +1,4 @@
 use crate::app::{
-    device,
     message::{self, LossType, TrainingMessage},
     options::{self, Options},
 };
@@ -7,7 +6,6 @@ use crate::error::VibeError;
 use crate::models;
 use crate::ui::{generate_screen, main_screen};
 
-use candle_core::Device;
 use crossterm::event::{self, KeyCode};
 use ratatui::{
     backend::CrosstermBackend,

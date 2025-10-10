@@ -1,4 +1,4 @@
-use crate::app::options::Options;
+use crate::app::{device, options::Options};
 use crate::ui::{colors::Palette, logo};
 
 use ratatui::{
@@ -36,7 +36,14 @@ pub fn draw(frame: &mut Frame, options: &Options, loss_data: &Vec<(f64, f64)>, v
         ]),
         Line::from(vec![
             Span::styled("device=", Style::default().fg(Color::Blue).bold()),
-            Span::raw(options.device.clone()),
+            if options.device == device::DEVICE_NAME_CPU {
+                Span::styled(
+                    options.device.clone(),
+                    Style::default().bg(Color::Red).fg(Color::Yellow).bold(),
+                )
+            } else {
+                Span::raw(options.device.clone())
+            },
         ]),
         Line::from(vec![
             Span::styled("method=", Style::default().fg(Color::Blue).bold()),

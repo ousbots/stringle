@@ -1,8 +1,8 @@
-use crate::error::VibeError;
+use crate::{app::device, error::VibeError, models::data};
 use std::env;
 
-const DEFAULT_DATA_PATH: &str = "data/names_short.txt";
-const DEFAULT_DEVICE: &str = "cpu";
+const DEFAULT_DATA_PATH: &str = data::DEFAULT_DATA_PATH;
+const DEFAULT_DEVICE: &str = device::DEVICE_NAME_CPU;
 const DEFAULT_METHOD: &str = "mlp";
 const DEFAULT_ITERATIONS: usize = 1000;
 const DEFAULT_BATCH_SIZE: usize = 512;
@@ -147,7 +147,13 @@ fn print_help() {
     println!("usage:");
     println!("command");
     println!("\t--data           <data path>      ({})", DEFAULT_DATA_PATH);
-    println!("\t--device         <metal|cuda|cpu> ({})", DEFAULT_DEVICE);
+    println!(
+        "\t--device         <{}|{}|{}> ({})",
+        device::DEVICE_NAME_CPU,
+        device::DEVICE_NAME_CUDA,
+        device::DEVICE_NAME_METAL,
+        DEFAULT_DEVICE
+    );
     println!("\t--method         <nn|mlp>         ({})", DEFAULT_METHOD);
     println!("\t--iterations     <num>            ({})", DEFAULT_ITERATIONS);
     println!("\t--batch-size     <num>            ({})", DEFAULT_BATCH_SIZE);
