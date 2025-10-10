@@ -13,7 +13,7 @@ const DEFAULT_LEARN_RATE: f32 = 0.1;
 const DEFAULT_GENERATE: usize = 20;
 
 // User provided runtime arguments.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Options {
     pub data: String,
     pub device: String,

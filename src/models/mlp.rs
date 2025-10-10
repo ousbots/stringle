@@ -1,20 +1,21 @@
-use crate::app::options::Options;
+use crate::app::{
+    device,
+    message::{LossType, TrainingMessage},
+    options::Options,
+};
 use crate::error::VibeError;
 use crate::models::data;
 
 use candle_core::{Device, Tensor, Var};
-use candle_nn::loss;
-use candle_nn::ops;
-use rand::seq::SliceRandom;
-use rand::Rng;
-use std::io;
-use std::io::Write;
+use candle_nn::{loss, ops};
+use rand::{seq::SliceRandom, Rng};
+use std::sync::mpsc::Sender;
 
 // The vocabulary is hardcoded to the 26 letters plus the special delimiter character.
 const VOCAB_SIZE: usize = 27;
 
-pub fn run(mut data: Vec<String>, device: Device, options: Options) -> Result<(), VibeError> {
-    println!("😎 multilayer perceptron network");
+pub fn run(mut data: Vec<String>, options: Options, sender: Sender<TrainingMessage>) -> Result<(), VibeError> {
+    let device = device::open_device(options.device.clone())?;
 
     // Randomize the input data, then break it into different data sets.
     //
@@ -48,20 +49,6 @@ pub fn run(mut data: Vec<String>, device: Device, options: Options) -> Result<()
 
     let mut parameters = vec![c, weights_1, biases_1, weights_2, biases_2];
 
-    println!(
-        "🤯 running training with {} parameters, {} iterations, and hyperparameters:",
-        parameters.iter().map(|elem| elem.elem_count()).sum::<usize>(),
-        options.iterations,
-    );
-    println!("\tembedding layers {}, hidden layer neurons {}, training batch size {}, tokenization block size {}, learning rate {}",
-        options.embedding_size,
-        options.hidden_size,
-        options.batch_size,
-        options.block_size,
-        options.learn_rate,
-    );
-    println!("");
-
     // Training rounds.
     //
     // NOTE: the data is randomly batched every training round and all weights adjusted based on
@@ -77,29 +64,29 @@ pub fn run(mut data: Vec<String>, device: Device, options: Options) -> Result<()
             &batch,
             &target.index_select(&batch_indices.flatten_all()?, 0)?,
             &parameters,
-            &options,
         )?;
 
         backward_pass(&loss, &mut parameters, &device, &options)?;
 
-        // Print iteration updates.
+        // Send progress updates through the channel
+        let _ = sender.send(TrainingMessage::Progress {
+            loss_type: LossType::Training,
+            iteration: count,
+            loss: loss.to_vec0::<f32>()?,
+        });
+
+        // Send validation progress every few iterations.
         if count % 100 == 0 {
-            print!("{:.0}%\t", 100. * (count as f64) / (options.iterations as f64));
+            let validation_loss = forward_pass(&input_dev, &target_dev, &parameters)?;
+            let _ = sender.send(TrainingMessage::Progress {
+                loss_type: LossType::Validation,
+                iteration: count,
+                loss: validation_loss.to_vec0::<f32>()?,
+            });
         }
-        print!(".");
-        if count > 0 && (count % 100 == 99 || count == options.iterations - 1) {
-            print!("\n");
-        }
-        io::stdout().flush()?;
     }
 
-    let training_loss = forward_pass(&input, &target, &parameters, &options)?;
-    let validation_loss = forward_pass(&input_dev, &target_dev, &parameters, &options)?;
-
-    println!("\n🤗🤗🤗🤗\n");
-    println!("🤔 training loss {}", training_loss.to_vec0::<f32>()?);
-    println!("🤔 validation loss {}", validation_loss.to_vec0::<f32>()?);
-    println!("🫣 generating {} new strings:\n", options.generate);
+    // let _ = sender.send(TrainingMessage::Finished);
 
     let c = parameters[0].as_tensor();
     let weights_1 = parameters[1].as_tensor();
@@ -134,18 +121,17 @@ pub fn run(mut data: Vec<String>, device: Device, options: Options) -> Result<()
             context.push(position as u8);
         }
 
-        println!("    {}", output);
+        let _ = sender.send(TrainingMessage::Generated {
+            value: format!("    {}", output),
+        });
     }
+
+    let _ = sender.send(TrainingMessage::Finished);
 
     Ok(())
 }
 
-fn forward_pass(
-    input: &Tensor,
-    target: &Tensor,
-    parameters: &Vec<Var>,
-    _options: &Options,
-) -> Result<Tensor, VibeError> {
+fn forward_pass(input: &Tensor, target: &Tensor, parameters: &Vec<Var>) -> Result<Tensor, VibeError> {
     let c = parameters[0].as_tensor();
     let weights_1 = parameters[1].as_tensor();
     let biases_1 = parameters[2].as_tensor();

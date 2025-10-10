@@ -1,8 +1,10 @@
 use crate::app::{
     device,
+    message::{self, LossType, TrainingMessage},
     options::{self, Options},
 };
 use crate::error::VibeError;
+use crate::models;
 use crate::ui::{generate_screen, main_screen};
 
 use candle_core::Device;
@@ -14,17 +16,23 @@ use ratatui::{
     DefaultTerminal, Terminal,
 };
 use std::io;
+use std::sync::mpsc::Receiver;
+use std::thread::{self, JoinHandle};
 
 pub struct App {
     pub terminal: DefaultTerminal,
     pub state: State,
     pub options: Options,
-    pub device: Device,
+    pub loss_data: Vec<(f64, f64)>,
+    pub validation_loss_data: Vec<(f64, f64)>,
+    pub training_thread: Option<JoinHandle<Result<(), VibeError>>>,
+    pub generated_strings: Vec<String>,
 }
 
+#[derive(PartialEq)]
 pub enum State {
     Main,
-    Train,
+    Training,
     Generate,
     Exit,
 }
@@ -40,12 +48,16 @@ impl App {
             terminal: terminal,
             state: State::Main,
             options: Options::new(),
-            device: Device::Cpu,
+            loss_data: Vec::new(),
+            validation_loss_data: Vec::new(),
+            training_thread: None,
+            generated_strings: Vec::new(),
         }
     }
 
     pub fn draw_main(&mut self) -> Result<(), VibeError> {
-        self.terminal.draw(|frame| main_screen::draw(frame, &self.options))?;
+        self.terminal
+            .draw(|frame| main_screen::draw(frame, &self.options, &self.loss_data, &self.validation_loss_data))?;
         Ok(())
     }
 
@@ -68,14 +80,87 @@ impl App {
             .as_key_press_event()
             .is_some_and(|key| key.code == KeyCode::Char('t') || key.code == KeyCode::Enter)
         {
-            self.state = State::Train;
+            if self.state != State::Training {
+                self.state = State::Training;
+            }
         }
 
         if event
             .as_key_press_event()
             .is_some_and(|key| key.code == KeyCode::Char('g') || key.code == KeyCode::Char('p'))
         {
-            self.state = State::Generate;
+            if self.state != State::Generate {
+                self.state = State::Generate;
+            }
+        }
+
+        Ok(())
+    }
+
+    fn start_training(&mut self) -> Result<(), VibeError> {
+        // Only start training if not already running
+        if self.training_thread.is_some() {
+            return Ok(());
+        }
+
+        // Clear previous data
+        self.loss_data.clear();
+        self.validation_loss_data.clear();
+        self.generated_strings.clear();
+
+        let data = models::data::parse_data(&self.options.data)?;
+        let (sender, receiver) = message::create_channel();
+
+        let method = self.options.method.clone();
+        let options = self.options.clone();
+
+        // Spawn the training thread.
+        match method.as_str() {
+            "nn" => {
+                self.training_thread = Some(thread::spawn(move || models::neural_net::run(data, options, sender)));
+            }
+            "mlp" => {
+                self.training_thread = Some(thread::spawn(move || models::mlp::run(data, options, sender)));
+            }
+            _ => return Err(VibeError::new(&format!("invalid method option: {}", method))),
+        };
+
+        self.process_training_messages(receiver)?;
+
+        // Wait on the training thread.
+        if let Some(thread) = self.training_thread.take() {
+            _ = thread.join().map_err(|err| VibeError::new(format!("{:?}", err)))?;
+            self.training_thread = None;
+        }
+
+        Ok(())
+    }
+
+    // Process all training messages, re-drawing as needed.
+    fn process_training_messages(&mut self, receiver: Receiver<TrainingMessage>) -> Result<(), VibeError> {
+        while let Ok(message) = receiver.recv() {
+            match message {
+                TrainingMessage::Progress {
+                    loss_type,
+                    iteration,
+                    loss,
+                } => match loss_type {
+                    LossType::Training => {
+                        self.loss_data.push((iteration as f64, loss as f64));
+                        self.draw_main()?;
+                    }
+                    LossType::Validation => {
+                        self.validation_loss_data.push((iteration as f64, loss as f64));
+                        self.draw_main()?;
+                    }
+                },
+                TrainingMessage::Generated { value } => {
+                    self.generated_strings.push(value);
+                }
+                TrainingMessage::Finished => {
+                    break;
+                }
+            }
         }
 
         Ok(())
@@ -83,7 +168,6 @@ impl App {
 
     pub fn run(&mut self) -> Result<(), VibeError> {
         options::parse_args(&mut self.options)?;
-        device::open_device(self)?;
 
         enable_raw_mode()?;
         execute!(self.terminal.backend_mut(), EnterAlternateScreen)?;
@@ -93,8 +177,9 @@ impl App {
                 State::Main => {
                     self.draw_main()?;
                 }
-                State::Train => {
-                    self.draw_main()?;
+                State::Training => {
+                    self.start_training()?;
+                    self.state = State::Main;
                 }
                 State::Generate => {
                     self.draw_generate()?;

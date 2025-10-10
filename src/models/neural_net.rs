@@ -1,33 +1,29 @@
 use crate::app::options::Options;
+use crate::app::{
+    device,
+    message::{LossType, TrainingMessage},
+};
 use crate::error::VibeError;
 use crate::models::data;
 
 use candle_core::{Device, Tensor, Var};
 use candle_nn::encoding;
 use rand::Rng;
-use std::io;
-use std::io::Write;
+use std::sync::mpsc::Sender;
 
 // Run the neural network training and generation.
-pub fn run(data: Vec<String>, device: Device, options: Options) -> Result<(), VibeError> {
-    println!("🥸 basic neural network");
-
+pub fn run(data: Vec<String>, options: Options, sender: Sender<TrainingMessage>) -> Result<(), VibeError> {
+    let device = device::open_device(options.device)?;
     let (input, target) = tokenize(data, &device)?;
 
     // Randomized starting weights that will be updated every training round.
     let mut weights = Var::rand(0f32, 1f32, (27, 27), &device)?;
-    let mut loss = Tensor::new(&[100f32], &device)?;
-
-    println!(
-        "🤯 running gradient descent training with {} iterations and a learning rate of {}\n",
-        options.iterations, options.learn_rate
-    );
 
     // The training rounds.
     //
     // Rounds are forward pass, backpropagate, then adjust the weights based on the calculated loss.
     for count in 0..options.iterations {
-        loss = forward_pass(&input, &target, &weights)?;
+        let loss = forward_pass(&input, &target, &weights)?;
 
         weights.backward()?.remove(&weights);
         let loss_grad = loss.backward()?;
@@ -39,19 +35,15 @@ pub fn run(data: Vec<String>, device: Device, options: Options) -> Result<(), Vi
             &weights.broadcast_sub(&weights_grad.broadcast_mul(&Tensor::new(&[options.learn_rate], &device)?)?)?,
         )?;
 
-        if count % 100 == 0 {
-            print!("{:.0}%\t", 100. * (count as f64) / (options.iterations as f64));
-        }
-        print!(".");
-        if count > 0 && (count % 100 == 99 || count == options.iterations - 1) {
-            print!("\n");
-        }
-        io::stdout().flush()?;
+        // Send progress updates through the channel
+        let _ = sender.send(TrainingMessage::Progress {
+            loss_type: LossType::Training,
+            iteration: count,
+            loss: loss.to_vec0::<f32>()?,
+        });
     }
 
-    println!("\n🤗🤗🤗🤗\n");
-    println!("🤔 post training loss {}", loss.to_vec0::<f32>()?);
-    println!("🫣 generating {} new strings:\n", options.generate);
+    // let _ = sender.send(TrainingMessage::Finished);
 
     // Generate new words from the trained weights.
     //
@@ -78,8 +70,12 @@ pub fn run(data: Vec<String>, device: Device, options: Options) -> Result<(), Vi
             output.push(data::itol(position));
         }
 
-        println!("    {}", output);
+        let _ = sender.send(TrainingMessage::Generated {
+            value: format!("    {}", output),
+        });
     }
+
+    let _ = sender.send(TrainingMessage::Finished);
 
     Ok(())
 }

@@ -10,8 +10,8 @@ use ratatui::{
     Frame,
 };
 
-// Draw the main screen showing the options and model training statistics.
-pub fn draw(frame: &mut Frame, options: &Options) {
+// Draw the main screen showing the options and model training statistics with dynamic loss data.
+pub fn draw(frame: &mut Frame, options: &Options, loss_data: &Vec<(f64, f64)>, validation_loss_data: &Vec<(f64, f64)>) {
     let area = frame.area();
 
     frame
@@ -105,25 +105,54 @@ pub fn draw(frame: &mut Frame, options: &Options) {
         parameters_area,
     );
 
-    render_loss(frame, model_area);
+    render_loss(frame, model_area, options, loss_data, validation_loss_data);
 }
 
-// Render the loss chart.
-fn render_loss(frame: &mut Frame, area: Rect) {
+// Render the loss chart with dynamic data.
+fn render_loss(
+    frame: &mut Frame,
+    area: Rect,
+    options: &Options,
+    loss_data: &[(f64, f64)],
+    validation_loss_data: &[(f64, f64)],
+) {
+    // Use either dynamic data or default data
+    let training_data = loss_data.to_vec();
+
+    let validation_data = validation_loss_data.to_vec();
+
+    // Calculate bounds for the chart
+    let max_x = training_data
+        .iter()
+        .chain(validation_data.iter())
+        .map(|(x, _)| *x)
+        .fold(options.iterations as f64, f64::max)
+        .round();
+
+    let max_y = training_data
+        .iter()
+        .chain(validation_data.iter())
+        .map(|(_, y)| *y)
+        .fold(6.0, f64::max)
+        .round();
+
     let datasets = vec![
         Dataset::default()
             .name("Training Loss")
             .marker(Marker::Braille)
             .graph_type(GraphType::Scatter)
             .style(Palette::TRAINING_LOSS_COLOR)
-            .data(&TRAINING_LOSS_DATA),
+            .data(&training_data),
         Dataset::default()
             .name("Validation Loss")
             .marker(Marker::Dot)
             .graph_type(GraphType::Scatter)
             .style(Palette::VALIDATION_LOSS_COLOR)
-            .data(&VALIDATION_LOSS_DATA),
+            .data(&validation_data),
     ];
+
+    let x_labels = vec!["0".to_string(), max_x.to_string()];
+    let y_labels = vec!["0".to_string(), max_y.to_string()];
 
     let chart = Chart::new(datasets)
         .style(Style::default().fg(Palette::FG_COLOR).bg(Palette::BG_COLOR))
@@ -136,67 +165,16 @@ fn render_loss(frame: &mut Frame, area: Rect) {
         )
         .x_axis(
             Axis::default()
-                .bounds([0., 300.])
+                .bounds([0., max_x])
                 .style(Style::default().fg(Palette::FG_COLOR))
-                .labels(["0", "100", "200", "300"]),
+                .labels(x_labels),
         )
         .y_axis(
             Axis::default()
-                .bounds([0., 40.])
+                .bounds([0., max_y])
                 .style(Style::default().fg(Palette::FG_COLOR))
-                .labels(["0", "10", "20", "30", "40"]),
+                .labels(y_labels),
         );
 
     frame.render_widget(chart, area);
 }
-
-const TRAINING_LOSS_DATA: [(f64, f64); 30] = [
-    (10., 29.50),
-    (20., 20.15),
-    (30., 12.60),
-    (40., 9.45),
-    (50., 6.37),
-    (60., 5.81),
-    (70., 5.25),
-    (80., 4.96),
-    (90., 4.81),
-    (100., 4.75),
-    (110., 4.62),
-    (120., 4.54),
-    (130., 4.42),
-    (140., 4.39),
-    (150., 4.36),
-    (160., 4.33),
-    (170., 4.30),
-    (180., 4.28),
-    (190., 4.26),
-    (200., 4.23),
-    (210., 4.21),
-    (220., 4.18),
-    (230., 4.16),
-    (240., 4.14),
-    (250., 4.12),
-    (260., 4.11),
-    (270., 4.09),
-    (280., 4.07),
-    (290., 4.06),
-    (300., 4.06),
-];
-
-const VALIDATION_LOSS_DATA: [(f64, f64); 15] = [
-    (20., 22.57),
-    (40., 9.22),
-    (60., 5.63),
-    (80., 4.98),
-    (100., 4.72),
-    (120., 4.63),
-    (140., 4.44),
-    (160., 4.38),
-    (180., 4.21),
-    (200., 4.24),
-    (220., 4.16),
-    (240., 4.15),
-    (260., 4.12),
-    (280., 4.09),
-    (300., 4.08),
-];
