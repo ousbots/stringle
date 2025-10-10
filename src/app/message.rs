@@ -8,7 +8,7 @@ pub enum LossType {
 
 // Message types for communication between training thread and UI
 #[derive(Debug, Clone)]
-pub enum TrainingMessage {
+pub enum ModelMessage {
     Progress {
         loss_type: LossType,
         iteration: usize,
@@ -21,6 +21,6 @@ pub enum TrainingMessage {
 }
 
 // Create a new channel pair for training communication
-pub fn create_channel() -> (Sender<TrainingMessage>, Receiver<TrainingMessage>) {
+pub fn create_channel() -> (Sender<ModelMessage>, Receiver<ModelMessage>) {
     mpsc::channel()
 }

@@ -1,5 +1,5 @@
 use crate::app::{device, options::Options};
-use crate::ui::{colors::Palette, logo};
+use crate::ui::{colors::Palette, generate_popup, logo};
 
 use ratatui::{
     layout::{Alignment, Constraint, Layout, Rect, Spacing},
@@ -11,7 +11,14 @@ use ratatui::{
 };
 
 // Draw the main screen showing the options and model training statistics with dynamic loss data.
-pub fn draw(frame: &mut Frame, options: &Options, loss_data: &Vec<(f64, f64)>, validation_loss_data: &Vec<(f64, f64)>) {
+pub fn draw(
+    frame: &mut Frame,
+    options: &Options,
+    loss_data: &Vec<(f64, f64)>,
+    validation_loss_data: &Vec<(f64, f64)>,
+    generated: &Vec<String>,
+    show_generate: bool,
+) {
     let area = frame.area();
 
     frame
@@ -113,6 +120,10 @@ pub fn draw(frame: &mut Frame, options: &Options, loss_data: &Vec<(f64, f64)>, v
     );
 
     render_loss(frame, model_area, options, loss_data, validation_loss_data);
+
+    if show_generate {
+        generate_popup::draw(frame, generated);
+    }
 }
 
 // Render the loss chart with dynamic data.

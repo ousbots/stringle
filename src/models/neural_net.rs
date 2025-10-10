@@ -1,7 +1,7 @@
 use crate::app::options::Options;
 use crate::app::{
     device,
-    message::{LossType, TrainingMessage},
+    message::{LossType, ModelMessage},
 };
 use crate::error::VibeError;
 use crate::models::data;
@@ -12,7 +12,7 @@ use rand::Rng;
 use std::sync::mpsc::Sender;
 
 // Run the neural network training and generation.
-pub fn run(data: Vec<String>, options: Options, sender: Sender<TrainingMessage>) -> Result<(), VibeError> {
+pub fn run(data: Vec<String>, options: Options, sender: Sender<ModelMessage>) -> Result<(), VibeError> {
     let device = device::open_device(options.device)?;
     let (input, target) = tokenize(data, &device)?;
 
@@ -36,14 +36,14 @@ pub fn run(data: Vec<String>, options: Options, sender: Sender<TrainingMessage>)
         )?;
 
         // Send progress updates through the channel
-        let _ = sender.send(TrainingMessage::Progress {
+        let _ = sender.send(ModelMessage::Progress {
             loss_type: LossType::Training,
             iteration: count,
             loss: loss.to_vec0::<f32>()?,
         });
     }
 
-    // let _ = sender.send(TrainingMessage::Finished);
+    // let _ = sender.send(ModelMessage::Finished);
 
     // Generate new words from the trained weights.
     //
@@ -70,12 +70,12 @@ pub fn run(data: Vec<String>, options: Options, sender: Sender<TrainingMessage>)
             output.push(data::itol(position));
         }
 
-        let _ = sender.send(TrainingMessage::Generated {
+        let _ = sender.send(ModelMessage::Generated {
             value: format!("    {}", output),
         });
     }
 
-    let _ = sender.send(TrainingMessage::Finished);
+    let _ = sender.send(ModelMessage::Finished);
 
     Ok(())
 }

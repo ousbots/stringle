@@ -1,10 +1,10 @@
 use crate::app::{
-    message::{self, LossType, TrainingMessage},
+    message::{self, LossType, ModelMessage},
     options::{self, Options},
 };
 use crate::error::VibeError;
 use crate::models;
-use crate::ui::{generate_screen, main_screen};
+use crate::ui::main_screen;
 
 use crossterm::event::{self, KeyCode};
 use ratatui::{
@@ -24,7 +24,7 @@ pub struct App {
     pub loss_data: Vec<(f64, f64)>,
     pub validation_loss_data: Vec<(f64, f64)>,
     pub training_thread: Option<JoinHandle<Result<(), VibeError>>>,
-    pub generated_strings: Vec<String>,
+    pub generated_data: Vec<String>,
 }
 
 #[derive(PartialEq)]
@@ -32,6 +32,7 @@ pub enum State {
     Main,
     Training,
     Generate,
+    ShowGenerated,
     Exit,
 }
 
@@ -49,18 +50,21 @@ impl App {
             loss_data: Vec::new(),
             validation_loss_data: Vec::new(),
             training_thread: None,
-            generated_strings: Vec::new(),
+            generated_data: Vec::new(),
         }
     }
 
-    pub fn draw_main(&mut self) -> Result<(), VibeError> {
-        self.terminal
-            .draw(|frame| main_screen::draw(frame, &self.options, &self.loss_data, &self.validation_loss_data))?;
-        Ok(())
-    }
-
-    pub fn draw_generate(&mut self) -> Result<(), VibeError> {
-        self.terminal.draw(|frame| generate_screen::draw(frame))?;
+    pub fn draw_main(&mut self, show_generate: bool) -> Result<(), VibeError> {
+        self.terminal.draw(|frame| {
+            main_screen::draw(
+                frame,
+                &self.options,
+                &self.loss_data,
+                &self.validation_loss_data,
+                &self.generated_data,
+                show_generate,
+            )
+        })?;
         Ok(())
     }
 
@@ -85,13 +89,28 @@ impl App {
 
         if event
             .as_key_press_event()
-            .is_some_and(|key| key.code == KeyCode::Char('g') || key.code == KeyCode::Char('p'))
+            .is_some_and(|key| key.code == KeyCode::Char('g'))
         {
             if self.state != State::Generate {
                 self.state = State::Generate;
             }
         }
 
+        if event
+            .as_key_press_event()
+            .is_some_and(|key| key.code == KeyCode::Char('p'))
+        {
+            if self.state == State::ShowGenerated {
+                self.state = State::Main;
+            } else {
+                self.state = State::ShowGenerated;
+            }
+        }
+
+        Ok(())
+    }
+
+    fn start_generation(&mut self) -> Result<(), VibeError> {
         Ok(())
     }
 
@@ -104,7 +123,7 @@ impl App {
         // Clear previous data
         self.loss_data.clear();
         self.validation_loss_data.clear();
-        self.generated_strings.clear();
+        self.generated_data.clear();
 
         let data = models::data::parse_data(&self.options.data)?;
         let (sender, receiver) = message::create_channel();
@@ -135,27 +154,27 @@ impl App {
     }
 
     // Process all training messages, re-drawing as needed.
-    fn process_training_messages(&mut self, receiver: Receiver<TrainingMessage>) -> Result<(), VibeError> {
+    fn process_training_messages(&mut self, receiver: Receiver<ModelMessage>) -> Result<(), VibeError> {
         while let Ok(message) = receiver.recv() {
             match message {
-                TrainingMessage::Progress {
+                ModelMessage::Progress {
                     loss_type,
                     iteration,
                     loss,
                 } => match loss_type {
                     LossType::Training => {
                         self.loss_data.push((iteration as f64, loss as f64));
-                        self.draw_main()?;
+                        self.draw_main(false)?;
                     }
                     LossType::Validation => {
                         self.validation_loss_data.push((iteration as f64, loss as f64));
-                        self.draw_main()?;
+                        self.draw_main(false)?;
                     }
                 },
-                TrainingMessage::Generated { value } => {
-                    self.generated_strings.push(value);
+                ModelMessage::Generated { value } => {
+                    self.generated_data.push(value);
                 }
-                TrainingMessage::Finished => {
+                ModelMessage::Finished => {
                     break;
                 }
             }
@@ -173,14 +192,18 @@ impl App {
         loop {
             match self.state {
                 State::Main => {
-                    self.draw_main()?;
+                    self.draw_main(false)?;
                 }
                 State::Training => {
                     self.start_training()?;
                     self.state = State::Main;
                 }
                 State::Generate => {
-                    self.draw_generate()?;
+                    self.start_generation()?;
+                    self.state = State::Main;
+                }
+                State::ShowGenerated => {
+                    self.draw_main(true)?;
                 }
                 State::Exit => break,
             }
