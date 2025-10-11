@@ -133,13 +133,14 @@ impl App {
         let (sender, receiver) = message::create_channel();
         let options = self.options.clone();
 
-        // Take ownership of the model to pass it into the new thread.
-        let mut model = self.model.take().unwrap();
-
-        self.model_thread = Some(thread::spawn(move || {
-            let result = model.generate(&options, sender);
-            (model, result)
-        }));
+        self.model_thread = if let Some(mut model) = self.model.take() {
+            Some(thread::spawn(move || {
+                let result = model.generate(&options, sender);
+                (model, result)
+            }))
+        } else {
+            None
+        };
 
         self.process_messages(receiver)?;
 
@@ -162,13 +163,14 @@ impl App {
         let (sender, receiver) = message::create_channel();
         let options = self.options.clone();
 
-        // Take ownership of the model to pass it into the new thread.
-        let mut model = self.model.take().unwrap();
-
-        self.model_thread = Some(thread::spawn(move || {
-            let result = model.train(&options, sender);
-            (model, result)
-        }));
+        self.model_thread = if let Some(mut model) = self.model.take() {
+            Some(thread::spawn(move || {
+                let result = model.train(&options, sender);
+                (model, result)
+            }))
+        } else {
+            None
+        };
 
         self.process_messages(receiver)?;
 
