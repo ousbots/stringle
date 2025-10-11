@@ -20,7 +20,11 @@ pub fn draw(frame: &mut Frame, generated: &Vec<String>) {
         .padding(Padding::horizontal(1))
         .title("Generated Text");
 
-    let lines: Vec<Line> = generated.iter().map(|text| Line::from(vec![Span::raw(text)])).collect();
+    let lines: Vec<Line> = generated
+        .iter()
+        .rev()
+        .map(|text| Line::from(vec![Span::raw(text)]))
+        .collect();
 
     frame.render_widget(Paragraph::new(lines).block(generated_block), area);
 }

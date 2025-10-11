@@ -1,9 +1,13 @@
-use crate::{app::device, error::VibeError, models::data};
+use crate::{
+    app::device,
+    error::VibeError,
+    models::{data, model},
+};
 use std::env;
 
 const DEFAULT_DATA_PATH: &str = data::DEFAULT_DATA_PATH;
 const DEFAULT_DEVICE: &str = device::DEVICE_NAME_CPU;
-const DEFAULT_METHOD: &str = "mlp";
+const DEFAULT_MODEL: &str = model::MODEL_NAME_MLP;
 const DEFAULT_ITERATIONS: usize = 1000;
 const DEFAULT_BATCH_SIZE: usize = 512;
 const DEFAULT_BLOCK_SIZE: usize = 3;
@@ -17,7 +21,7 @@ const DEFAULT_GENERATE: usize = 20;
 pub struct Options {
     pub data: String,
     pub device: String,
-    pub method: String,
+    pub model: String,
     pub iterations: usize,
     pub batch_size: usize,
     pub block_size: usize,
@@ -32,7 +36,7 @@ impl Options {
         Self {
             data: DEFAULT_DATA_PATH.to_string(),
             device: DEFAULT_DEVICE.to_string(),
-            method: DEFAULT_METHOD.to_string(),
+            model: DEFAULT_MODEL.to_string(),
             iterations: DEFAULT_ITERATIONS,
             batch_size: DEFAULT_BATCH_SIZE,
             block_size: DEFAULT_BLOCK_SIZE,
@@ -68,12 +72,12 @@ pub fn parse_args(options: &mut Options) -> Result<(), VibeError> {
                     return Err(VibeError::new("missing the device portion of the --device flag"));
                 }
             }
-            "--method" => {
-                if let Some(method) = args.pop() {
-                    options.method = method;
+            "--model" => {
+                if let Some(model) = args.pop() {
+                    options.model = model;
                 } else {
                     print_help();
-                    return Err(VibeError::new("missing the method portion of the --method flag"));
+                    return Err(VibeError::new("missing the method portion of the --model flag"));
                 }
             }
             "--iterations" => {
@@ -154,7 +158,12 @@ fn print_help() {
         device::DEVICE_NAME_METAL,
         DEFAULT_DEVICE
     );
-    println!("\t--method         <nn|mlp>         ({})", DEFAULT_METHOD);
+    println!(
+        "\t--model          <{}|{}>          ({})",
+        model::MODEL_NAME_MLP,
+        model::MODEL_NAME_NN,
+        DEFAULT_MODEL
+    );
     println!("\t--iterations     <num>            ({})", DEFAULT_ITERATIONS);
     println!("\t--batch-size     <num>            ({})", DEFAULT_BATCH_SIZE);
     println!("\t--block-size     <num>            ({})", DEFAULT_BLOCK_SIZE);

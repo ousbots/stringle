@@ -1,10 +1,16 @@
-use crate::app::{
-    message::{self, LossType, ModelMessage},
-    options::{self, Options},
+use crate::{
+    app::{
+        message::{self, LossType, ModelMessage},
+        options::{self, Options},
+    },
+    error::VibeError,
+    models::{
+        mlp::MLP,
+        model::{self, Model},
+        neural_net::NN,
+    },
+    ui::main_screen,
 };
-use crate::error::VibeError;
-use crate::models;
-use crate::ui::main_screen;
 
 use crossterm::event::{self, KeyCode};
 use ratatui::{
@@ -20,11 +26,13 @@ use std::thread::{self, JoinHandle};
 pub struct App {
     pub terminal: DefaultTerminal,
     pub state: State,
+    pub show_generated: bool,
     pub options: Options,
     pub loss_data: Vec<(f64, f64)>,
     pub validation_loss_data: Vec<(f64, f64)>,
-    pub training_thread: Option<JoinHandle<Result<(), VibeError>>>,
     pub generated_data: Vec<String>,
+    pub model: Option<Box<dyn Model>>,
+    pub model_thread: Option<JoinHandle<(Box<dyn Model>, Result<(), VibeError>)>>,
 }
 
 #[derive(PartialEq)]
@@ -32,29 +40,39 @@ pub enum State {
     Main,
     Training,
     Generate,
-    ShowGenerated,
     Exit,
 }
 
 impl App {
-    pub fn new() -> Self {
+    pub fn new() -> Result<Self, VibeError> {
         let backend = CrosstermBackend::new(io::stdout());
         let terminal = Terminal::new(backend).unwrap_or_else(|err| {
             panic!("unable to open terminal: {}", err);
         });
 
-        Self {
+        let mut options = Options::new();
+        options::parse_args(&mut options)?;
+
+        let model: Box<dyn Model> = match options.model.as_str() {
+            model::MODEL_NAME_NN => Box::new(NN::init(&options)?),
+            model::MODEL_NAME_MLP => Box::new(MLP::init(&options)?),
+            _ => return Err(VibeError::new(format!("invalid model type {}", options.model))),
+        };
+
+        Ok(Self {
             terminal: terminal,
             state: State::Main,
-            options: Options::new(),
+            show_generated: false,
+            options: options,
             loss_data: Vec::new(),
             validation_loss_data: Vec::new(),
-            training_thread: None,
             generated_data: Vec::new(),
-        }
+            model: Some(model),
+            model_thread: None,
+        })
     }
 
-    pub fn draw_main(&mut self, show_generate: bool) -> Result<(), VibeError> {
+    pub fn draw_main(&mut self) -> Result<(), VibeError> {
         self.terminal.draw(|frame| {
             main_screen::draw(
                 frame,
@@ -62,7 +80,7 @@ impl App {
                 &self.loss_data,
                 &self.validation_loss_data,
                 &self.generated_data,
-                show_generate,
+                self.show_generated,
             )
         })?;
         Ok(())
@@ -100,61 +118,72 @@ impl App {
             .as_key_press_event()
             .is_some_and(|key| key.code == KeyCode::Char('p'))
         {
-            if self.state == State::ShowGenerated {
-                self.state = State::Main;
-            } else {
-                self.state = State::ShowGenerated;
-            }
+            self.show_generated = !self.show_generated;
         }
 
         Ok(())
     }
 
+    // Run the model text generation in a new thread.
     fn start_generation(&mut self) -> Result<(), VibeError> {
-        Ok(())
-    }
-
-    fn start_training(&mut self) -> Result<(), VibeError> {
-        // Only start training if not already running
-        if self.training_thread.is_some() {
+        if self.model_thread.is_some() {
             return Ok(());
         }
 
-        // Clear previous data
-        self.loss_data.clear();
-        self.validation_loss_data.clear();
-        self.generated_data.clear();
-
-        let data = models::data::parse_data(&self.options.data)?;
         let (sender, receiver) = message::create_channel();
-
-        let method = self.options.method.clone();
         let options = self.options.clone();
 
-        // Spawn the training thread.
-        match method.as_str() {
-            "nn" => {
-                self.training_thread = Some(thread::spawn(move || models::neural_net::run(data, options, sender)));
-            }
-            "mlp" => {
-                self.training_thread = Some(thread::spawn(move || models::mlp::run(data, options, sender)));
-            }
-            _ => return Err(VibeError::new(&format!("invalid method option: {}", method))),
-        };
+        // Take ownership of the model to pass it into the new thread.
+        let mut model = self.model.take().unwrap();
 
-        self.process_training_messages(receiver)?;
+        self.model_thread = Some(thread::spawn(move || {
+            let result = model.generate(&options, sender);
+            (model, result)
+        }));
 
-        // Wait on the training thread.
-        if let Some(thread) = self.training_thread.take() {
-            _ = thread.join().map_err(|err| VibeError::new(format!("{:?}", err)))?;
-            self.training_thread = None;
+        self.process_messages(receiver)?;
+
+        // Wait on the generation thread then restore the model.
+        if let Some(thread) = self.model_thread.take() {
+            let (model, result) = thread.join().map_err(|err| VibeError::new(format!("{:?}", err)))?;
+            self.model = Some(model);
+            result?;
+        }
+
+        Ok(())
+    }
+
+    // Run the model training in a new thread.
+    fn start_training(&mut self) -> Result<(), VibeError> {
+        if self.model_thread.is_some() {
+            return Ok(());
+        }
+
+        let (sender, receiver) = message::create_channel();
+        let options = self.options.clone();
+
+        // Take ownership of the model to pass it into the new thread.
+        let mut model = self.model.take().unwrap();
+
+        self.model_thread = Some(thread::spawn(move || {
+            let result = model.train(&options, sender);
+            (model, result)
+        }));
+
+        self.process_messages(receiver)?;
+
+        // Wait on the training thread then restore the model.
+        if let Some(thread) = self.model_thread.take() {
+            let (model, result) = thread.join().map_err(|err| VibeError::new(format!("{:?}", err)))?;
+            self.model = Some(model);
+            result?;
         }
 
         Ok(())
     }
 
     // Process all training messages, re-drawing as needed.
-    fn process_training_messages(&mut self, receiver: Receiver<ModelMessage>) -> Result<(), VibeError> {
+    fn process_messages(&mut self, receiver: Receiver<ModelMessage>) -> Result<(), VibeError> {
         while let Ok(message) = receiver.recv() {
             match message {
                 ModelMessage::Progress {
@@ -164,15 +193,18 @@ impl App {
                 } => match loss_type {
                     LossType::Training => {
                         self.loss_data.push((iteration as f64, loss as f64));
-                        self.draw_main(false)?;
+                        self.draw_main()?;
                     }
                     LossType::Validation => {
                         self.validation_loss_data.push((iteration as f64, loss as f64));
-                        self.draw_main(false)?;
+                        self.draw_main()?;
                     }
                 },
-                ModelMessage::Generated { value } => {
-                    self.generated_data.push(value);
+                ModelMessage::Generated { text } => {
+                    self.generated_data.push(text);
+                    if self.show_generated {
+                        self.draw_main()?;
+                    }
                 }
                 ModelMessage::Finished => {
                     break;
@@ -184,15 +216,13 @@ impl App {
     }
 
     pub fn run(&mut self) -> Result<(), VibeError> {
-        options::parse_args(&mut self.options)?;
-
         enable_raw_mode()?;
         execute!(self.terminal.backend_mut(), EnterAlternateScreen)?;
 
         loop {
             match self.state {
                 State::Main => {
-                    self.draw_main(false)?;
+                    self.draw_main()?;
                 }
                 State::Training => {
                     self.start_training()?;
@@ -201,9 +231,6 @@ impl App {
                 State::Generate => {
                     self.start_generation()?;
                     self.state = State::Main;
-                }
-                State::ShowGenerated => {
-                    self.draw_main(true)?;
                 }
                 State::Exit => break,
             }

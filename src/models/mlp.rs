@@ -1,12 +1,14 @@
-use crate::app::{
-    device,
-    message::{LossType, TrainingMessage},
-    options::Options,
+use crate::{
+    app::{
+        device,
+        message::{LossType, ModelMessage},
+        options::Options,
+    },
+    error::VibeError,
+    models::{data, model::Model},
 };
-use crate::error::VibeError;
-use crate::models::data;
 
-use candle_core::{Device, Tensor, Var};
+use candle_core::{backprop::GradStore, Device, Tensor, Var};
 use candle_nn::{loss, ops};
 use rand::{seq::SliceRandom, Rng};
 use std::sync::mpsc::Sender;
@@ -14,171 +16,191 @@ use std::sync::mpsc::Sender;
 // The vocabulary is hardcoded to the 26 letters plus the special delimiter character.
 const VOCAB_SIZE: usize = 27;
 
-pub fn run(mut data: Vec<String>, options: Options, sender: Sender<TrainingMessage>) -> Result<(), VibeError> {
-    let device = device::open_device(options.device.clone())?;
+pub struct MLP {
+    data: Vec<String>,
+    c: Var,
+    weights_1: Var,
+    biases_1: Var,
+    weights_2: Var,
+    biases_2: Var,
+}
 
-    // Randomize the input data, then break it into different data sets.
-    //
-    // The three different data sets will be the training set, the dev (validation) set, and the
-    // test set. The training set is used for model training, the dev set is a set of valid words
-    // the model hasn't been trained on that we can validate against. And finally, the test set is
-    // another set of words the model wasn't trained on that can be used sparingly to test the
-    // model without influencing training.
-    data.shuffle(&mut rand::rng());
+impl Model for MLP {
+    fn train(&mut self, options: &Options, sender: Sender<ModelMessage>) -> Result<(), VibeError> {
+        let device = device::open_device(&options.device)?;
 
-    let training_end = (data.len() as f64 * 0.8).round() as usize;
-    let dev_end = (data.len() as f64 * 0.9).round() as usize;
+        // Randomize the input data, then break it into different data sets.
+        //
+        // The three different data sets will be the training set, the dev (validation) set, and the
+        // test set. The training set is used for model training, the dev set is a set of valid words
+        // the model hasn't been trained on that we can validate against. And finally, the test set is
+        // another set of words the model wasn't trained on that can be used sparingly to test the
+        // model without influencing training.
+        self.data.shuffle(&mut rand::rng());
 
-    let (input, target) = tokenize(&data[..training_end].to_vec(), &device, &options)?;
-    let (input_dev, target_dev) = tokenize(&data[training_end..dev_end].to_vec(), &device, &options)?;
-    let (_intput_test, _target_test) = tokenize(&data[dev_end..].to_vec(), &device, &options)?;
+        let training_end = (self.data.len() as f64 * 0.8).round() as usize;
+        let dev_end = (self.data.len() as f64 * 0.9).round() as usize;
 
-    // Model parameters.
-    let c = Var::rand(0f32, 1f32, (VOCAB_SIZE, options.embedding_size), &device)?;
-    // The gain (max value) is discussed in the "Delving Deep into Rectifier" paper by Kaiming He.
-    // gain = (5/3) * sqrt(embedding_size * block_size).
-    let weights_1 = Var::rand(
-        0f32,
-        (5.0 / 3.0) / (options.embedding_size as f32 * options.block_size as f32).sqrt(),
-        (options.embedding_size * options.block_size, options.hidden_size),
-        &device,
-    )?;
-    let biases_1 = Var::rand(0f32, 0.01f32, options.hidden_size, &device)?;
-    let weights_2 = Var::rand(0f32, 0.01f32, (options.hidden_size, VOCAB_SIZE), &device)?;
-    let biases_2 = Var::zeros(VOCAB_SIZE, candle_core::DType::F32, &device)?;
+        let (input, target) = tokenize(&self.data[..training_end].to_vec(), &device, &options)?;
+        let (input_dev, target_dev) = tokenize(&self.data[training_end..dev_end].to_vec(), &device, &options)?;
+        let (_intput_test, _target_test) = tokenize(&self.data[dev_end..].to_vec(), &device, &options)?;
 
-    let mut parameters = vec![c, weights_1, biases_1, weights_2, biases_2];
+        // Training rounds.
+        //
+        // NOTE: the data is randomly batched every training round and all weights adjusted based on
+        // the batch loss. This speeds up training by not having to calculate the entire gradient every
+        // round. In the tradeoff between calculating the exact gradient every round versus running
+        // more rounds, running more rounds shows better results.
+        for count in 0..options.iterations {
+            let batch_indices = Tensor::rand(0f32, input.dims()[0] as f32, (options.batch_size,), &device)?
+                .to_dtype(candle_core::DType::U32)?;
+            let batch = input.index_select(&batch_indices.flatten_all()?, 0)?;
 
-    // Training rounds.
-    //
-    // NOTE: the data is randomly batched every training round and all weights adjusted based on
-    // the batch loss. This speeds up training by not having to calculate the entire gradient every
-    // round. In the tradeoff between calculating the exact gradient every round versus running
-    // more rounds, running more rounds shows better results.
-    for count in 0..options.iterations {
-        let batch_indices = Tensor::rand(0f32, input.dims()[0] as f32, (options.batch_size,), &device)?
-            .to_dtype(candle_core::DType::U32)?;
-        let batch = input.index_select(&batch_indices.flatten_all()?, 0)?;
+            let loss = self.forward_pass(&batch, &target.index_select(&batch_indices.flatten_all()?, 0)?)?;
 
-        let loss = forward_pass(
-            &batch,
-            &target.index_select(&batch_indices.flatten_all()?, 0)?,
-            &parameters,
-        )?;
+            self.backward_pass(&loss, &device, &options)?;
 
-        backward_pass(&loss, &mut parameters, &device, &options)?;
-
-        // Send progress updates through the channel
-        let _ = sender.send(TrainingMessage::Progress {
-            loss_type: LossType::Training,
-            iteration: count,
-            loss: loss.to_vec0::<f32>()?,
-        });
-
-        // Send validation progress every few iterations.
-        if count % 100 == 0 {
-            let validation_loss = forward_pass(&input_dev, &target_dev, &parameters)?;
-            let _ = sender.send(TrainingMessage::Progress {
-                loss_type: LossType::Validation,
+            // Send progress updates through the channel
+            let _ = sender.send(ModelMessage::Progress {
+                loss_type: LossType::Training,
                 iteration: count,
-                loss: validation_loss.to_vec0::<f32>()?,
+                loss: loss.to_vec0::<f32>()?,
+            });
+
+            // Send validation progress every few iterations.
+            if count % 100 == 0 {
+                let validation_loss = self.forward_pass(&input_dev, &target_dev)?;
+                let _ = sender.send(ModelMessage::Progress {
+                    loss_type: LossType::Validation,
+                    iteration: count,
+                    loss: validation_loss.to_vec0::<f32>()?,
+                });
+            }
+        }
+
+        let _ = sender.send(ModelMessage::Finished);
+
+        Ok(())
+    }
+
+    fn generate(&mut self, options: &Options, sender: Sender<ModelMessage>) -> Result<(), VibeError> {
+        let device = device::open_device(&options.device)?;
+
+        for _ in 0..options.generate {
+            let mut output: String = "".to_string();
+            let mut context: Vec<u8> = vec![0; options.block_size];
+
+            loop {
+                let embeddings = self
+                    .c
+                    .index_select(&Tensor::new(context.clone(), &device)?.flatten_all()?, 0)?;
+
+                let h = embeddings
+                    .reshape(((), self.weights_1.dims()[0]))?
+                    .matmul(&self.weights_1)?
+                    .broadcast_add(&self.biases_1)?
+                    .tanh()?;
+
+                let logits = h.matmul(&self.weights_2)?.broadcast_add(&self.biases_2)?;
+
+                let probs = ops::softmax(&logits, 1)?;
+
+                let position = random_sample(&probs)?;
+                if position == 0 {
+                    break;
+                }
+                output.push(data::itol(position as u8));
+
+                context.remove(0);
+                context.push(position as u8);
+            }
+
+            let _ = sender.send(ModelMessage::Generated {
+                text: format!("    {}", output),
             });
         }
+
+        let _ = sender.send(ModelMessage::Finished);
+
+        Ok(())
     }
-
-    // let _ = sender.send(TrainingMessage::Finished);
-
-    let c = parameters[0].as_tensor();
-    let weights_1 = parameters[1].as_tensor();
-    let biases_1 = parameters[2].as_tensor();
-    let weights_2 = parameters[3].as_tensor();
-    let biases_2 = parameters[4].as_tensor();
-
-    for _ in 0..options.generate {
-        let mut output: String = "".to_string();
-        let mut context: Vec<u8> = vec![0; options.block_size];
-
-        loop {
-            let embeddings = c.index_select(&Tensor::new(context.clone(), &device)?.flatten_all()?, 0)?;
-
-            let h = embeddings
-                .reshape(((), weights_1.dims()[0]))?
-                .matmul(&weights_1)?
-                .broadcast_add(&biases_1)?
-                .tanh()?;
-
-            let logits = h.matmul(&weights_2)?.broadcast_add(&biases_2)?;
-
-            let probs = ops::softmax(&logits, 1)?;
-
-            let position = random_sample(&probs)?;
-            if position == 0 {
-                break;
-            }
-            output.push(data::itol(position as u8));
-
-            context.remove(0);
-            context.push(position as u8);
-        }
-
-        let _ = sender.send(TrainingMessage::Generated {
-            value: format!("    {}", output),
-        });
-    }
-
-    let _ = sender.send(TrainingMessage::Finished);
-
-    Ok(())
 }
 
-fn forward_pass(input: &Tensor, target: &Tensor, parameters: &Vec<Var>) -> Result<Tensor, VibeError> {
-    let c = parameters[0].as_tensor();
-    let weights_1 = parameters[1].as_tensor();
-    let biases_1 = parameters[2].as_tensor();
-    let weights_2 = parameters[3].as_tensor();
-    let biases_2 = parameters[4].as_tensor();
+impl MLP {
+    pub fn init(options: &Options) -> Result<Self, VibeError> {
+        let device = device::open_device(&options.device)?;
 
-    // Embed the input into vectors.
-    let embeddings = c.index_select(&input.flatten_all()?, 0)?;
+        Ok(Self {
+            data: data::parse_data(&options.data)?,
+            c: Var::rand(0f32, 1f32, (VOCAB_SIZE, options.embedding_size), &device)?,
+            // The gain (max value) is discussed in the "Delving Deep into Rectifier" paper by Kaiming He.
+            // gain: (5/3) * sqrt(embedding_size * block_size).
+            weights_1: Var::rand(
+                0f32,
+                (5.0 / 3.0) / (options.embedding_size as f32 * options.block_size as f32).sqrt(),
+                (options.embedding_size * options.block_size, options.hidden_size),
+                &device,
+            )?,
+            biases_1: Var::rand(0f32, 0.01f32, options.hidden_size, &device)?,
+            weights_2: Var::rand(0f32, 0.01f32, (options.hidden_size, VOCAB_SIZE), &device)?,
+            biases_2: Var::zeros(VOCAB_SIZE, candle_core::DType::F32, &device)?,
+        })
+    }
 
-    // Hidden layer pre-activation with weights and biases and activation with tanh.
-    let h = embeddings
-        .reshape(((), weights_1.dims()[0]))?
-        .matmul(&weights_1)?
-        .broadcast_add(&biases_1)?
-        .tanh()?;
+    fn forward_pass(&self, input: &Tensor, target: &Tensor) -> Result<Tensor, VibeError> {
+        // Embed the input into vectors.
+        let embeddings = self.c.index_select(&input.flatten_all()?, 0)?;
 
-    // Output layer.
-    let logits = h.matmul(&weights_2)?.broadcast_add(&biases_2)?;
+        // Hidden layer pre-activation with weights and biases and activation with tanh.
+        let h = embeddings
+            .reshape(((), self.weights_1.dims()[0]))?
+            .matmul(&self.weights_1)?
+            .broadcast_add(&self.biases_1)?
+            .tanh()?;
 
-    // Loss function.
-    Ok(loss::cross_entropy(
-        &logits,
-        &target.to_dtype(candle_core::DType::I64)?,
-    )?)
+        // Output layer.
+        let logits = h.matmul(&self.weights_2)?.broadcast_add(&self.biases_2)?;
+
+        // Loss function.
+        Ok(loss::cross_entropy(
+            &logits,
+            &target.to_dtype(candle_core::DType::I64)?,
+        )?)
+    }
+
+    fn backward_pass(&mut self, loss: &Tensor, device: &Device, options: &Options) -> Result<(), VibeError> {
+        let loss_grad = loss.backward()?;
+
+        backward_pass_parameter(&mut self.c, &loss_grad, options.learn_rate, device)?;
+        backward_pass_parameter(&mut self.weights_1, &loss_grad, options.learn_rate, device)?;
+        backward_pass_parameter(&mut self.biases_1, &loss_grad, options.learn_rate, device)?;
+        backward_pass_parameter(&mut self.weights_2, &loss_grad, options.learn_rate, device)?;
+        backward_pass_parameter(&mut self.biases_2, &loss_grad, options.learn_rate, device)?;
+
+        Ok(())
+    }
 }
 
-fn backward_pass(
-    loss: &Tensor,
-    parameters: &mut Vec<Var>,
+// Run the gradient descent backward pass on a single parameter.
+fn backward_pass_parameter(
+    param: &mut Var,
+    loss_grad: &GradStore,
+    learn_rate: f32,
     device: &Device,
-    options: &Options,
 ) -> Result<(), VibeError> {
-    let loss_grad = loss.backward()?;
+    // Clear the gradient for this parameter.
+    param.backward()?.remove(param.as_tensor());
 
-    // Zero the gradients on each parameter, then adjust the parameter by learning rate * loss gradient.
-    for index in 0..parameters.len() {
-        let param = parameters[index].as_tensor();
-        param.backward()?.remove(param);
+    // Get the gradient from the loss gradient store.
+    let gradient = loss_grad
+        .get(param.as_tensor())
+        .ok_or_else(|| VibeError::new("missing loss gradient"))?;
 
-        let weights_grad = loss_grad
-            .get(param)
-            .ok_or_else(|| VibeError::new("missing loss gradient"))?;
+    // Compute the update: new_param = param - (gradient * learning_rate)
+    let updated_param = param.broadcast_sub(&gradient.broadcast_mul(&Tensor::new(&[learn_rate], device)?)?)?;
 
-        parameters[index] = Var::from_tensor(
-            &param.broadcast_sub(&weights_grad.broadcast_mul(&Tensor::new(&[options.learn_rate], device)?)?)?,
-        )?;
-    }
+    // Replace the parameter with the updated value.
+    *param = Var::from_tensor(&updated_param)?;
 
     Ok(())
 }

@@ -7,7 +7,7 @@ pub const DEVICE_NAME_CUDA: &str = "cuda";
 pub const DEVICE_NAME_METAL: &str = "metal";
 
 // Open the given device for data processing.
-pub fn open_device(device: String) -> Result<Device, VibeError> {
+pub fn open_device(device: &String) -> Result<Device, VibeError> {
     match device.trim().to_lowercase().as_str() {
         DEVICE_NAME_CPU => Ok(Device::Cpu),
         DEVICE_NAME_CUDA => {

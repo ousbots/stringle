@@ -15,7 +15,7 @@ pub enum ModelMessage {
         loss: f32,
     },
     Generated {
-        value: String,
+        text: String,
     },
     Finished,
 }

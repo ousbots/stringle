@@ -53,8 +53,8 @@ pub fn draw(
             },
         ]),
         Line::from(vec![
-            Span::styled("method=", Style::default().fg(Color::Blue).bold()),
-            Span::raw(options.method.clone()),
+            Span::styled("model=", Style::default().fg(Color::Blue).bold()),
+            Span::raw(options.model.clone()),
         ]),
         Line::from(vec![
             Span::styled("iterations=", Style::default().fg(Color::Blue).bold()),
