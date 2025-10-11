@@ -14,6 +14,7 @@ use rand::Rng;
 use std::sync::mpsc::Sender;
 
 pub struct NN {
+    device: Device,
     data: Vec<String>,
     weights: Var,
 }
@@ -21,9 +22,7 @@ pub struct NN {
 // Run the neural network training.
 impl Model for NN {
     fn train(&mut self, options: &Options, sender: Sender<ModelMessage>) -> Result<(), VibeError> {
-        let device = device::open_device(&options.device)?;
-
-        let (input, target) = tokenize(&self.data, &device)?;
+        let (input, target) = tokenize(&self.data, &self.device)?;
 
         // The training rounds.
         //
@@ -31,7 +30,7 @@ impl Model for NN {
         for count in 0..options.iterations {
             let loss = self.forward_pass(&input, &target)?;
 
-            self.backward_pass(&loss, options, &device)?;
+            self.backward_pass(&loss, options)?;
 
             // Send progress updates through the channel
             let _ = sender.send(ModelMessage::Progress {
@@ -54,14 +53,12 @@ impl Model for NN {
     // result is used as the input on the next round until a position of 0 (the delimiter) is
     // reached, which is the end of the word.
     fn generate(&mut self, options: &Options, sender: Sender<ModelMessage>) -> Result<(), VibeError> {
-        let device = device::open_device(&options.device)?;
-
         for _ in 0..options.generate {
             let mut position: u8 = 0;
             let mut output: String = "".to_string();
 
             loop {
-                let position_enc = encoding::one_hot(Tensor::new(&[position], &device)?, 27, 1f32, 0f32)?;
+                let position_enc = encoding::one_hot(Tensor::new(&[position], &self.device)?, 27, 1f32, 0f32)?;
                 let logits = position_enc.matmul(&self.weights)?;
                 let counts = logits.exp()?;
                 let probs = counts.broadcast_div(&counts.sum_keepdim(1)?)?;
@@ -93,6 +90,7 @@ impl NN {
             data: data::parse_data(&options.data)?,
             // Randomized starting weights that will be updated every training round.
             weights: Var::rand(0f32, 1f32, (27, 27), &device)?,
+            device: device,
         })
     }
 
@@ -126,7 +124,7 @@ impl NN {
         Ok(loss)
     }
 
-    fn backward_pass(&mut self, loss: &Tensor, options: &Options, device: &Device) -> Result<(), VibeError> {
+    fn backward_pass(&mut self, loss: &Tensor, options: &Options) -> Result<(), VibeError> {
         self.weights.backward()?.remove(&self.weights);
         let loss_grad = loss.backward()?;
         let weights_grad = loss_grad
@@ -136,7 +134,7 @@ impl NN {
         self.weights = Var::from_tensor(
             &self
                 .weights
-                .broadcast_sub(&weights_grad.broadcast_mul(&Tensor::new(&[options.learn_rate], &device)?)?)?,
+                .broadcast_sub(&weights_grad.broadcast_mul(&Tensor::new(&[options.learn_rate], &self.device)?)?)?,
         )?;
 
         Ok(())

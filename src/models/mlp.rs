@@ -17,6 +17,7 @@ use std::sync::mpsc::Sender;
 const VOCAB_SIZE: usize = 27;
 
 pub struct MLP {
+    device: Device,
     data: Vec<String>,
     c: Var,
     weights_1: Var,
@@ -27,8 +28,6 @@ pub struct MLP {
 
 impl Model for MLP {
     fn train(&mut self, options: &Options, sender: Sender<ModelMessage>) -> Result<(), VibeError> {
-        let device = device::open_device(&options.device)?;
-
         // Randomize the input data, then break it into different data sets.
         //
         // The three different data sets will be the training set, the dev (validation) set, and the
@@ -41,9 +40,9 @@ impl Model for MLP {
         let training_end = (self.data.len() as f64 * 0.8).round() as usize;
         let dev_end = (self.data.len() as f64 * 0.9).round() as usize;
 
-        let (input, target) = tokenize(&self.data[..training_end].to_vec(), &device, &options)?;
-        let (input_dev, target_dev) = tokenize(&self.data[training_end..dev_end].to_vec(), &device, &options)?;
-        let (_intput_test, _target_test) = tokenize(&self.data[dev_end..].to_vec(), &device, &options)?;
+        let (input, target) = tokenize(&self.data[..training_end].to_vec(), &self.device, &options)?;
+        let (input_dev, target_dev) = tokenize(&self.data[training_end..dev_end].to_vec(), &self.device, &options)?;
+        let (_intput_test, _target_test) = tokenize(&self.data[dev_end..].to_vec(), &self.device, &options)?;
 
         // Training rounds.
         //
@@ -52,13 +51,13 @@ impl Model for MLP {
         // round. In the tradeoff between calculating the exact gradient every round versus running
         // more rounds, running more rounds shows better results.
         for count in 0..options.iterations {
-            let batch_indices = Tensor::rand(0f32, input.dims()[0] as f32, (options.batch_size,), &device)?
+            let batch_indices = Tensor::rand(0f32, input.dims()[0] as f32, (options.batch_size,), &self.device)?
                 .to_dtype(candle_core::DType::U32)?;
             let batch = input.index_select(&batch_indices.flatten_all()?, 0)?;
 
             let loss = self.forward_pass(&batch, &target.index_select(&batch_indices.flatten_all()?, 0)?)?;
 
-            self.backward_pass(&loss, &device, &options)?;
+            self.backward_pass(&loss, &options)?;
 
             // Send progress updates through the channel
             let _ = sender.send(ModelMessage::Progress {
@@ -84,8 +83,6 @@ impl Model for MLP {
     }
 
     fn generate(&mut self, options: &Options, sender: Sender<ModelMessage>) -> Result<(), VibeError> {
-        let device = device::open_device(&options.device)?;
-
         for _ in 0..options.generate {
             let mut output: String = "".to_string();
             let mut context: Vec<u8> = vec![0; options.block_size];
@@ -93,7 +90,7 @@ impl Model for MLP {
             loop {
                 let embeddings = self
                     .c
-                    .index_select(&Tensor::new(context.clone(), &device)?.flatten_all()?, 0)?;
+                    .index_select(&Tensor::new(context.clone(), &self.device)?.flatten_all()?, 0)?;
 
                 let h = embeddings
                     .reshape(((), self.weights_1.dims()[0]))?
@@ -144,6 +141,7 @@ impl MLP {
             biases_1: Var::rand(0f32, 0.01f32, options.hidden_size, &device)?,
             weights_2: Var::rand(0f32, 0.01f32, (options.hidden_size, VOCAB_SIZE), &device)?,
             biases_2: Var::zeros(VOCAB_SIZE, candle_core::DType::F32, &device)?,
+            device: device,
         })
     }
 
@@ -168,14 +166,14 @@ impl MLP {
         )?)
     }
 
-    fn backward_pass(&mut self, loss: &Tensor, device: &Device, options: &Options) -> Result<(), VibeError> {
+    fn backward_pass(&mut self, loss: &Tensor, options: &Options) -> Result<(), VibeError> {
         let loss_grad = loss.backward()?;
 
-        backward_pass_parameter(&mut self.c, &loss_grad, options.learn_rate, device)?;
-        backward_pass_parameter(&mut self.weights_1, &loss_grad, options.learn_rate, device)?;
-        backward_pass_parameter(&mut self.biases_1, &loss_grad, options.learn_rate, device)?;
-        backward_pass_parameter(&mut self.weights_2, &loss_grad, options.learn_rate, device)?;
-        backward_pass_parameter(&mut self.biases_2, &loss_grad, options.learn_rate, device)?;
+        backward_pass_parameter(&mut self.c, &loss_grad, options.learn_rate, &self.device)?;
+        backward_pass_parameter(&mut self.weights_1, &loss_grad, options.learn_rate, &self.device)?;
+        backward_pass_parameter(&mut self.biases_1, &loss_grad, options.learn_rate, &self.device)?;
+        backward_pass_parameter(&mut self.weights_2, &loss_grad, options.learn_rate, &self.device)?;
+        backward_pass_parameter(&mut self.biases_2, &loss_grad, options.learn_rate, &self.device)?;
 
         Ok(())
     }
